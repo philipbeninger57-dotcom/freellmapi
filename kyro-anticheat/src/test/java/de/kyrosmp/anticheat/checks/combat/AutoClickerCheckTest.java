@@ -1,23 +1,28 @@
 package de.kyrosmp.anticheat.checks.combat;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import de.kyrosmp.anticheat.core.CheckConfig;
 import de.kyrosmp.anticheat.core.PlayerData;
 import de.kyrosmp.anticheat.flag.FlagSink;
+
 import org.bukkit.entity.Player;
 import org.junit.jupiter.api.Test;
 
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
 class AutoClickerCheckTest {
     private static final class RecordingSink implements FlagSink {
         int flags;
-        @Override public String flag(Player p, PlayerData d, String check, String summary, String details) {
+
+        @Override
+        public String flag(Player p, PlayerData d, String check, String summary, String details) {
             flags++;
             return "test";
         }
-        @Override public void action(String id, String action) { }
+
+        @Override
+        public void action(String id, String action) {}
     }
 
     @Test

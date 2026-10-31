@@ -1,13 +1,5 @@
-/*
- * Decompiled with CFR 0.152.
- * 
- * Could not load the following classes:
- *  org.bukkit.Location
- *  org.bukkit.World
- */
 package de.kyrosmp.anticheat.core;
 
-import de.kyrosmp.anticheat.core.PlayerData;
 import org.bukkit.Location;
 import org.bukkit.World;
 
@@ -15,50 +7,67 @@ public final class TeleportSync {
     public static final double SAME_POSITION_SQ = 0.01;
     public static final double CORRECTION_SQ = 1.0;
 
-    private TeleportSync() {
-    }
+    private TeleportSync() {}
 
-    public static Kind classifyFrom(PlayerData d, World world, double x, double y, double z, long now) {
-        double distSq;
+    public static TeleportSync.Kind classifyFrom(
+            PlayerData d, World world, double x, double y, double z, long now) {
         if (world == null || !finitePosition(x, y, z)) {
-            return Kind.CORRECTION;
+            return TeleportSync.Kind.CORRECTION;
+        } else if (!d.syncValid) {
+            return TeleportSync.Kind.CONTINUOUS;
+        } else {
+            boolean sameWorld = world == d.syncWorld;
+            double distSq =
+                    sameWorld
+                            ? distSq(x, y, z, d.syncX, d.syncY, d.syncZ)
+                            : Double.POSITIVE_INFINITY;
+            return distSq <= 0.01
+                    ? TeleportSync.Kind.CONTINUOUS
+                    : classifyDestination(d, world, x, y, z, distSq, now);
         }
-        if (!d.syncValid) {
-            return Kind.CONTINUOUS;
-        }
-        boolean sameWorld = world == d.syncWorld;
-        double d2 = distSq = sameWorld ? TeleportSync.distSq(x, y, z, d.syncX, d.syncY, d.syncZ) : Double.POSITIVE_INFINITY;
-        if (distSq <= 0.01) {
-            return Kind.CONTINUOUS;
-        }
-        return TeleportSync.classifyDestination(d, world, x, y, z, distSq, now);
     }
 
-    public static Kind classifyTeleport(PlayerData d, Location to, long now) {
-        if (to == null || to.getWorld() == null || !finitePosition(to.getX(), to.getY(), to.getZ())) {
-            return Kind.CORRECTION;
+    public static TeleportSync.Kind classifyTeleport(PlayerData d, Location to, long now) {
+        if (to != null
+                && to.getWorld() != null
+                && finitePosition(to.getX(), to.getY(), to.getZ())) {
+            World world = to.getWorld();
+            double distSq =
+                    d.syncValid && world == d.syncWorld
+                            ? distSq(to.getX(), to.getY(), to.getZ(), d.syncX, d.syncY, d.syncZ)
+                            : Double.POSITIVE_INFINITY;
+            return classifyDestination(d, world, to.getX(), to.getY(), to.getZ(), distSq, now);
+        } else {
+            return TeleportSync.Kind.CORRECTION;
         }
-        World world = to.getWorld();
-        double distSq = d.syncValid && world == d.syncWorld ? TeleportSync.distSq(to.getX(), to.getY(), to.getZ(), d.syncX, d.syncY, d.syncZ) : Double.POSITIVE_INFINITY;
-        return TeleportSync.classifyDestination(d, world, to.getX(), to.getY(), to.getZ(), distSq, now);
     }
 
-    private static Kind classifyDestination(PlayerData d, World world, double x, double y, double z, double distSqToSync, long now) {
+    private static TeleportSync.Kind classifyDestination(
+            PlayerData d,
+            World world,
+            double x,
+            double y,
+            double z,
+            double distSqToSync,
+            long now) {
         Location pending = d.pendingSetback;
-        if (pending != null && d.hasFreshPendingSetback(now) && pending.getWorld() == world && TeleportSync.distSq(x, y, z, pending.getX(), pending.getY(), pending.getZ()) <= 0.01) {
-            return Kind.OWN_SETBACK;
+        if (pending != null
+                && d.hasFreshPendingSetback(now)
+                && pending.getWorld() == world
+                && distSq(x, y, z, pending.getX(), pending.getY(), pending.getZ()) <= 0.01) {
+            return TeleportSync.Kind.OWN_SETBACK;
+        } else {
+            return distSqToSync <= 1.0
+                    ? TeleportSync.Kind.CORRECTION
+                    : TeleportSync.Kind.RELOCATION;
         }
-        if (distSqToSync <= 1.0) {
-            return Kind.CORRECTION;
-        }
-        return Kind.RELOCATION;
     }
 
-    public static boolean redirectedByPlugin(PlayerData d, Object event, double toX, double toY, double toZ) {
-        if (d.lowestMoveEvent != event || !finitePosition(toX, toY, toZ)) {
-            return false;
-        }
-        return TeleportSync.distSq(toX, toY, toZ, d.lowestToX, d.lowestToY, d.lowestToZ) > 1.0E-8;
+    public static boolean redirectedByPlugin(
+            PlayerData d, Object event, double toX, double toY, double toZ) {
+        return d.lowestMoveEvent == event && finitePosition(toX, toY, toZ)
+                ? distSq(toX, toY, toZ, d.lowestToX, d.lowestToY, d.lowestToZ) > 1.0E-8
+                : false;
     }
 
     private static boolean finitePosition(double x, double y, double z) {
@@ -77,7 +86,5 @@ public final class TeleportSync {
         CORRECTION,
         OWN_SETBACK,
         RELOCATION;
-
     }
 }
-

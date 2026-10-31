@@ -1,21 +1,13 @@
-/*
- * Decompiled with CFR 0.152.
- * 
- * Could not load the following classes:
- *  org.bukkit.Location
- *  org.bukkit.World
- *  org.bukkit.util.Vector
- */
 package de.kyrosmp.anticheat.core;
 
-import de.kyrosmp.anticheat.core.PlayerHistory;
+import org.bukkit.Location;
+import org.bukkit.World;
+import org.bukkit.util.Vector;
+
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedDeque;
-import org.bukkit.Location;
-import org.bukkit.World;
-import org.bukkit.util.Vector;
 
 public final class PlayerData {
     public static final long SETBACK_GRACE_OFFSET_MS = 2400L;
@@ -25,8 +17,8 @@ public final class PlayerData {
     public volatile String world = "?";
     public volatile int ping;
     public volatile Boolean bedrock;
-    public final ConcurrentLinkedDeque<Long> flyFlags = new ConcurrentLinkedDeque();
-    public final ConcurrentLinkedDeque<Long> boatFlyFlags = new ConcurrentLinkedDeque();
+    public final ConcurrentLinkedDeque<Long> flyFlags = new ConcurrentLinkedDeque<>();
+    public final ConcurrentLinkedDeque<Long> boatFlyFlags = new ConcurrentLinkedDeque<>();
     public volatile long lastTeleport;
     public volatile long lastVelocity;
     public volatile long velocityGraceUntil;
@@ -91,7 +83,7 @@ public final class PlayerData {
     public volatile long inventoryEvidenceMoveAt;
     public volatile double scaffoldBuffer;
     public volatile double fastPlaceBuffer;
-    public final ArrayDeque<Long> placeTimes = new ArrayDeque();
+    public final ArrayDeque<Long> placeTimes = new ArrayDeque<>();
     public volatile long swingSecondStart;
     public volatile int swingCount;
     public volatile int highCpsSeconds;
@@ -144,14 +136,14 @@ public final class PlayerData {
     public volatile double elytraCandZ;
     public volatile long elytraCandAt;
     public volatile String lastElytraFlagId;
-    public final ArrayDeque<Long> elytraIncidents = new ArrayDeque();
+    public final ArrayDeque<Long> elytraIncidents = new ArrayDeque<>();
     public volatile int dryOverLiquidTicks;
     public volatile double wallHitBuffer;
     public volatile Object lowestVelocityEvent;
     public volatile Vector lowestVelocity;
     public volatile double criticalsBuffer;
-    public final long[] xrayMinedRing = PlayerData.filled(128);
-    public final long[] xrayOreRing = PlayerData.filled(32);
+    public final long[] xrayMinedRing = filled(128);
+    public final long[] xrayOreRing = filled(32);
     public int xrayMinedHead;
     public int xrayOreHead;
     public volatile World xrayWorld;
@@ -167,28 +159,20 @@ public final class PlayerData {
     public long lastDropSwingExemptAt;
     public final PlayerHistory history = new PlayerHistory(60, 20);
     public volatile String lastExemptReason;
-    // ---- 3.7 prediction state (owned by the player's region thread) ----
-    /** Vertical velocity carried into the next tick; NaN = unknown (use take-off rules). */
     public double predVy = Double.NaN;
-    /** Lower end of the carried vertical velocity when it is only known as a range (after impulses). */
     public double predVyLow = Double.NaN;
-    /** Horizontal velocity carried into the next tick; NaN = unknown. */
     public double predH = Double.NaN;
-    /** Horizontal displacement actually observed in the previous event. */
     public double predHObserved;
-    /** Ground state at the end of the event before the previous one (friction of the carried velocity). */
     public boolean predPrevGround;
-    /** Exact ground contact (as vanilla's onGround) at the end of the previous event. */
     public boolean predLastGroundStrict = true;
     public long predLastAt;
     public double predAttrPeak = Double.NaN;
     public long predAttrPeakAt;
-    /** Small ring of server-sent impulses (velocity, knockback, explosions) the client may still apply. */
     public static final int IMPULSE_SLOTS = 4;
-    public final double[] impulseVyRing = new double[IMPULSE_SLOTS];
-    public final double[] impulseHRing = new double[IMPULSE_SLOTS];
-    public final long[] impulseAtRing = new long[IMPULSE_SLOTS];
-    public final boolean[] impulseUsedRing = {true, true, true, true};
+    public final double[] impulseVyRing = new double[4];
+    public final double[] impulseHRing = new double[4];
+    public final long[] impulseAtRing = new long[4];
+    public final boolean[] impulseUsedRing = new boolean[] {true, true, true, true};
     public int impulseNext;
     public long predImpulseAppliedAt;
     public double flyPredBuffer;
@@ -217,29 +201,25 @@ public final class PlayerData {
     public double scaffoldFaceBuffer;
     public volatile double lastMoveDy;
 
-    /** Records a motion change the server sent to the client; it may apply it within ping time. */
     public void registerPredictionImpulse(double vx, double vy, double vz, long now) {
-        if (!Double.isFinite(vx) || !Double.isFinite(vy) || !Double.isFinite(vz)) return;
-        int slot = this.impulseNext;
-        this.impulseNext = (slot + 1) % IMPULSE_SLOTS;
-        this.impulseVyRing[slot] = vy;
-        this.impulseHRing[slot] = Math.sqrt(vx * vx + vz * vz);
-        this.impulseAtRing[slot] = now;
-        this.impulseUsedRing[slot] = false;
+        if (Double.isFinite(vx) && Double.isFinite(vy) && Double.isFinite(vz)) {
+            int slot = this.impulseNext;
+            this.impulseNext = (slot + 1) % 4;
+            this.impulseVyRing[slot] = vy;
+            this.impulseHRing[slot] = Math.sqrt(vx * vx + vz * vz);
+            this.impulseAtRing[slot] = now;
+            this.impulseUsedRing[slot] = false;
+        }
     }
 
-    /** The client always restarts with zero velocity after a server position packet. */
     public void resetPrediction(boolean velocityKnownZero) {
         this.predVy = velocityKnownZero ? 0.0 : Double.NaN;
         this.predVyLow = Double.NaN;
         this.predH = velocityKnownZero ? 0.0 : Double.NaN;
         this.predHObserved = 0.0;
-        // Unknown support: assume ground (the larger acceleration) for the first tick.
         this.predLastGroundStrict = true;
         this.predPrevGround = true;
-        java.util.Arrays.fill(this.impulseUsedRing, true);
-        // Strikes are kept on purpose: a rejected move is followed by exactly this reset, and the
-        // repeat within one second must still escalate to a ground setback. They expire by time.
+        Arrays.fill(this.impulseUsedRing, true);
         this.noSlowMoves = 0;
         this.hoverStillChecks = 0;
     }
@@ -260,7 +240,7 @@ public final class PlayerData {
         this.flyBuffer = Math.max(0.0, this.flyBuffer - 0.8);
         this.timerBalance = Math.min(this.timerBalance, 0.0);
         this.airTicks = 0;
-        this.airSince = 0;
+        this.airSince = 0L;
         this.hoverTicks = 0;
         this.unsupportedHoverSince = 0L;
         this.unsupportedHoverLastAt = 0L;
@@ -268,106 +248,115 @@ public final class PlayerData {
     }
 
     public void setSync(Location at, long now) {
-        if (at == null || at.getWorld() == null || !Double.isFinite(at.getX())
-                || !Double.isFinite(at.getY()) || !Double.isFinite(at.getZ())) {
+        if (at != null
+                && at.getWorld() != null
+                && Double.isFinite(at.getX())
+                && Double.isFinite(at.getY())
+                && Double.isFinite(at.getZ())) {
+            this.syncAt = now;
+            this.syncWorld = at.getWorld();
+            this.syncX = at.getX();
+            this.syncY = at.getY();
+            this.syncZ = at.getZ();
+            this.syncValid = true;
+        } else {
             this.syncValid = false;
-            return;
         }
-        this.syncAt = now;
-        this.syncWorld = at.getWorld();
-        this.syncX = at.getX();
-        this.syncY = at.getY();
-        this.syncZ = at.getZ();
-        this.syncValid = true;
     }
 
     public boolean hasFreshPendingSetback(long now) {
         long age = now - this.pendingSetbackAt;
-        return this.pendingSetback != null && age >= 0L && age <= SETBACK_STALE_MS;
+        return this.pendingSetback != null && age >= 0L && age <= 5000L;
     }
 
     public void applyTeleport(Location to, long now, boolean ownSetback) {
-        if (!validPosition(to)) return;
-        this.safePositions.clear();
-        this.fallSafe = null;
-        this.lastBoatSafe = null;
-        this.lastBoatSafeAt = 0;
-        ++this.teleportsApplied;
-        if (ownSetback) {
-            // An anti-cheat correction is not a fresh server-teleport exemption.
-            // Otherwise every correction buys another unchecked speed burst.
-            this.lastTeleport = now - 30001L;
-            this.pendingSetback = null;
-            this.groundSinceFlyIncident = true;
-        } else {
-            this.lastTeleport = now;
-            if (this.pendingSetback != null) {
+        if (validPosition(to)) {
+            this.safePositions.clear();
+            this.fallSafe = null;
+            this.lastBoatSafe = null;
+            this.lastBoatSafeAt = 0L;
+            this.teleportsApplied++;
+            if (ownSetback) {
+                this.lastTeleport = now - 30001L;
                 this.pendingSetback = null;
-                ++this.setbackSeq;
+                this.groundSinceFlyIncident = true;
+            } else {
+                this.lastTeleport = now;
+                if (this.pendingSetback != null) {
+                    this.pendingSetback = null;
+                    this.setbackSeq++;
+                }
             }
+
+            this.lastSafe = ownSetback ? to.clone() : null;
+            this.elytraSafeAt = 0L;
+            this.elytraCandAt = 0L;
+            this.history.clearMoves();
+            this.lastSafeAt = now;
+            if (to != null) {
+                this.groundY = to.getY();
+                this.fallPeakY = to.getY();
+                this.lastY = to.getY();
+            }
+
+            this.landedAt = 0L;
+            this.impulseY = Double.NaN;
+            this.impulseVy = Double.NaN;
+            this.graceFlyEvidence = false;
+            this.elytraCeilingMin = Double.NaN;
+            double timerDebt = this.timerBalance;
+            this.coolMovementBuffers();
+            if (ownSetback && timerDebt > 0.0) {
+                this.timerBalance = timerDebt;
+            }
+
+            this.kbTime = 0L;
+            this.resetPrediction(true);
+            this.lastPositionChangeAt = now;
+            this.setSync(to, now);
         }
-        // A server teleport does not prove that its destination has support.
-        // Own validated setbacks retain an anchor; other teleports reacquire one
-        // from the first checked ground movement after the grace period.
-        this.lastSafe = ownSetback ? to.clone() : null;
-        this.elytraSafeAt = 0L;
-        this.elytraCandAt = 0L;
-        this.history.clearMoves();
-        this.lastSafeAt = now;
-        if (to != null) {
-            this.groundY = to.getY();
-            this.fallPeakY = to.getY();
-            this.lastY = to.getY();
-        }
-        this.landedAt = 0L;
-        this.impulseY = Double.NaN;
-        this.impulseVy = Double.NaN;
-        this.graceFlyEvidence = false;
-        this.elytraCeilingMin = Double.NaN;
-        double timerDebt = this.timerBalance;
-        this.coolMovementBuffers();
-        if (ownSetback && timerDebt > 0) this.timerBalance = timerDebt;
-        this.kbTime = 0L;
-        // Absolute server teleports restart the client with zero velocity.
-        this.resetPrediction(true);
-        this.lastPositionChangeAt = now;
-        this.setSync(to, now);
     }
 
     public void applyRelocation(Location to, long now) {
-        if (!validPosition(to)) return;
-        long since = this.syncAt;
-        this.applyTeleport(to, now, false);
-        this.lastTeleport = Math.max(Math.min(since, now), now - 2400L);
+        if (validPosition(to)) {
+            long since = this.syncAt;
+            this.applyTeleport(to, now, false);
+            this.lastTeleport = Math.max(Math.min(since, now), now - 2400L);
+        }
     }
 
     public void applyDismount(Location to, long now) {
-        if (!validPosition(to)) return;
-        if (to != null) {
-            this.groundY = to.getY();
-            this.fallPeakY = to.getY();
-            this.lastY = to.getY();
+        if (validPosition(to)) {
+            if (to != null) {
+                this.groundY = to.getY();
+                this.fallPeakY = to.getY();
+                this.lastY = to.getY();
+            }
+
+            this.landedAt = 0L;
+            this.impulseY = Double.NaN;
+            this.impulseVy = Double.NaN;
+            this.coolMovementBuffers();
+            this.kbTime = 0L;
+            this.teleportsApplied++;
+            this.resetPrediction(false);
+            this.lastPositionChangeAt = now;
+            this.setSync(to, now);
         }
-        this.landedAt = 0L;
-        this.impulseY = Double.NaN;
-        this.impulseVy = Double.NaN;
-        this.coolMovementBuffers();
-        this.kbTime = 0L;
-        ++this.teleportsApplied;
-        // Leaving a vehicle keeps an unknown amount of its motion.
-        this.resetPrediction(false);
-        this.lastPositionChangeAt = now;
-        this.setSync(to, now);
     }
 
     private static boolean validPosition(Location at) {
-        return at != null && at.getWorld() != null && Double.isFinite(at.getX())
-                && Double.isFinite(at.getY()) && Double.isFinite(at.getZ())
-                && Float.isFinite(at.getYaw()) && Float.isFinite(at.getPitch());
+        return at != null
+                && at.getWorld() != null
+                && Double.isFinite(at.getX())
+                && Double.isFinite(at.getY())
+                && Double.isFinite(at.getZ())
+                && Float.isFinite(at.getYaw())
+                && Float.isFinite(at.getPitch());
     }
 
     public void resetBoatState(UUID newBoat) {
-        this.boatAirSince = 0;
+        this.boatAirSince = 0L;
         this.boatSetbackAt = 0L;
         this.boatId = newBoat;
         this.lastBoatSafe = null;
@@ -379,9 +368,6 @@ public final class PlayerData {
         this.boatHoverLastAt = 0L;
     }
 
-    /*
-     * WARNING - Removed try catching itself - possible behaviour change.
-     */
     public void resetBuffers() {
         this.coolMovementBuffers();
         this.groundSpoofBuffer = 0.0;
@@ -415,12 +401,11 @@ public final class PlayerData {
         this.nukerBuffer = 0.0;
         this.ghostHandBuffer = 0.0;
         this.scaffoldFaceBuffer = 0.0;
-        ArrayDeque<Long> arrayDeque = this.elytraIncidents;
-        synchronized (arrayDeque) {
+        synchronized (this.elytraIncidents) {
             this.elytraIncidents.clear();
         }
+
         this.flyFlags.clear();
         this.boatFlyFlags.clear();
     }
 }
-

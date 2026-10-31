@@ -7,14 +7,66 @@ import java.util.function.LongSupplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-/** Reports failed check samples without letting repeated API errors flood the server log. */
 public final class CheckDiagnostics {
-    private static final long INTERVAL_MS = 60_000L;
-    private static final CheckDiagnostics DEFAULT = new CheckDiagnostics(
-            Logger.getLogger("KYRO-AntiCheat"), () -> System.nanoTime() / 1_000_000L);
+    private static final long INTERVAL_MS = 60000L;
+    private static final CheckDiagnostics DEFAULT =
+            new CheckDiagnostics(
+                    Logger.getLogger("KYRO-AntiCheat"), () -> System.nanoTime() / 1000000L);
+    private final Logger logger;
+    private final LongSupplier clock;
+    private final Map<CheckDiagnostics.Context, CheckDiagnostics.Window> windows =
+            new EnumMap<>(CheckDiagnostics.Context.class);
 
-    /** Fixed contexts keep state bounded; never use a player name, UUID, or exception message as a key. */
-    public enum Context {
+    CheckDiagnostics(Logger logger, LongSupplier clock) {
+        this.logger = Objects.requireNonNull(logger);
+        this.clock = Objects.requireNonNull(clock);
+    }
+
+    public static void report(CheckDiagnostics.Context context, Throwable failure) {
+        DEFAULT.record(context, failure);
+    }
+
+    void record(CheckDiagnostics.Context context, Throwable failure) {
+        Objects.requireNonNull(context);
+        Objects.requireNonNull(failure);
+        if (failure instanceof VirtualMachineError fatal) {
+            throw fatal;
+        } else if (failure instanceof ThreadDeath fatal) {
+            throw fatal;
+        } else {
+            long suppressed;
+            synchronized (this.windows) {
+                long now = this.clock.getAsLong();
+                CheckDiagnostics.Window window =
+                        this.windows.computeIfAbsent(
+                                context, ignored -> new CheckDiagnostics.Window());
+                if (window.logged && now >= window.lastLogAt && now - window.lastLogAt < 60000L) {
+                    if (window.suppressed < Long.MAX_VALUE) {
+                        window.suppressed++;
+                    }
+
+                    return;
+                }
+
+                suppressed = window.suppressed;
+                window.suppressed = 0L;
+                window.lastLogAt = now;
+                window.logged = true;
+            }
+
+            this.logger.log(
+                    Level.WARNING,
+                    "[KYRO-AntiCheat] "
+                            + context.description
+                            + " failed; check processing for this sample was incomplete."
+                            + " suppressed_since_last_log="
+                            + suppressed
+                            + ". Check server/API compatibility and the stack trace below.",
+                    failure);
+        }
+    }
+
+    public static enum Context {
         COMBAT_ATTACK("Reach/KillAura attack processing"),
         WALL_HIT("KillAura wall visibility"),
         TARGET_SWITCH("KillAura target direction"),
@@ -22,49 +74,9 @@ public final class CheckDiagnostics {
 
         private final String description;
 
-        Context(String description) {
+        private Context(String description) {
             this.description = description;
         }
-    }
-
-    private final Logger logger;
-    private final LongSupplier clock;
-    private final Map<Context, Window> windows = new EnumMap<>(Context.class);
-
-    /** The clock supplies monotonic milliseconds; injectable for deterministic tests. */
-    CheckDiagnostics(Logger logger, LongSupplier clock) {
-        this.logger = Objects.requireNonNull(logger);
-        this.clock = Objects.requireNonNull(clock);
-    }
-
-    public static void report(Context context, Throwable failure) {
-        DEFAULT.record(context, failure);
-    }
-
-    void record(Context context, Throwable failure) {
-        Objects.requireNonNull(context);
-        Objects.requireNonNull(failure);
-        // Resource exhaustion and VM shutdown cannot be made safe by skipping a check.
-        if (failure instanceof VirtualMachineError fatal) throw fatal;
-        if (failure instanceof ThreadDeath fatal) throw fatal;
-
-        long suppressed;
-        synchronized (windows) {
-            long now = clock.getAsLong();
-            Window window = windows.computeIfAbsent(context, ignored -> new Window());
-            if (window.logged && now >= window.lastLogAt && now - window.lastLogAt < INTERVAL_MS) {
-                if (window.suppressed < Long.MAX_VALUE) window.suppressed++;
-                return;
-            }
-            suppressed = window.suppressed;
-            window.suppressed = 0L;
-            window.lastLogAt = now;
-            window.logged = true;
-        }
-        logger.log(Level.WARNING, "[KYRO-AntiCheat] " + context.description
-                + " failed; check processing for this sample was incomplete."
-                + " suppressed_since_last_log=" + suppressed
-                + ". Check server/API compatibility and the stack trace below.", failure);
     }
 
     private static final class Window {

@@ -1,10 +1,12 @@
 package de.kyrosmp.anticheat.core;
 
-import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
+import org.junit.jupiter.api.Test;
+
 class PhysicsHardeningTest {
-    @Test void nonfiniteAttributesCannotCreateInfiniteMovementBudgets() {
+    @Test
+    void nonfiniteAttributesCannotCreateInfiniteMovementBudgets() {
         assertEquals(0.42, Physics.jumpVelocity(Double.POSITIVE_INFINITY, -1));
         assertEquals(0.08, Physics.gravity(Double.POSITIVE_INFINITY));
         assertEquals(4.5, Physics.noFallThreshold(-1, Double.POSITIVE_INFINITY));
@@ -13,21 +15,24 @@ class PhysicsHardeningTest {
         assertTrue(Double.isFinite(Physics.maxJumpHeight(Double.MAX_VALUE, 0.0)));
     }
 
-    @Test void legitimateZeroGravityAndJumpAttributesArePreserved() {
+    @Test
+    void legitimateZeroGravityAndJumpAttributesArePreserved() {
         assertEquals(0.0, Physics.gravity(0.0));
         assertEquals(0.0, Physics.jumpVelocity(0.0, -1));
         assertEquals(0.0, Physics.maxJumpHeight(0.0, 0.0));
         assertTrue(Physics.maxJumpHeight(0.42, 0.0) > Physics.maxJumpHeight(0.42, 0.08));
     }
 
-    @Test void potionArithmeticDoesNotWrapIntoNegativeBudgets() {
+    @Test
+    void potionArithmeticDoesNotWrapIntoNegativeBudgets() {
         assertTrue(Physics.jumpVelocity(0.42, Integer.MAX_VALUE) > 0.42);
         assertTrue(Physics.noFallThreshold(Integer.MAX_VALUE, 3.0) > 4.5);
         assertEquals(0.42, Physics.jumpVelocity(Double.NaN, -1));
         assertEquals(1.252203352512, Physics.maxJumpHeight(-1), 1e-9);
     }
 
-    @Test void brokenTimingInputsRecoverInsteadOfPoisoningTheTimer() {
+    @Test
+    void brokenTimingInputsRecoverInsteadOfPoisoningTheTimer() {
         assertEquals(0.0, Physics.timerBalance(Double.NaN, 50.0));
         assertEquals(0.0, Physics.timerBalance(0.0, Double.NaN));
         assertEquals(0.0, Physics.timerBalance(0.0, -1.0));

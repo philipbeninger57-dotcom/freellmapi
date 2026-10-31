@@ -1,5 +1,9 @@
 package de.kyrosmp.anticheat.core;
 
+import static org.junit.jupiter.api.Assertions.*;
+
+import org.junit.jupiter.api.Test;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
@@ -7,9 +11,6 @@ import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
-import org.junit.jupiter.api.Test;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 class CheckDiagnosticsTest {
     private final AtomicLong now = new AtomicLong();
@@ -20,15 +21,24 @@ class CheckDiagnosticsTest {
         Logger logger = Logger.getAnonymousLogger();
         logger.setUseParentHandlers(false);
         logger.setLevel(Level.ALL);
-        logger.addHandler(new Handler() {
-            @Override public void publish(LogRecord record) { records.add(record); }
-            @Override public void flush() { }
-            @Override public void close() { }
-        });
+        logger.addHandler(
+                new Handler() {
+                    @Override
+                    public void publish(LogRecord record) {
+                        records.add(record);
+                    }
+
+                    @Override
+                    public void flush() {}
+
+                    @Override
+                    public void close() {}
+                });
         return new CheckDiagnostics(logger, now::get);
     }
 
-    @Test void firstFailureLogsStackTraceAndRepeatedFailuresAreSuppressedForOneMinute() {
+    @Test
+    void firstFailureLogsStackTraceAndRepeatedFailuresAreSuppressedForOneMinute() {
         var first = new IllegalStateException("API failure");
         diagnostics.record(CheckDiagnostics.Context.WALL_HIT, first);
         assertEquals(1, records.size());
@@ -48,7 +58,8 @@ class CheckDiagnosticsTest {
         assertInstanceOf(NoSuchMethodError.class, records.get(1).getThrown());
     }
 
-    @Test void contextsAreIndependentAndSuppressedCountResetsAfterReporting() {
+    @Test
+    void contextsAreIndependentAndSuppressedCountResetsAfterReporting() {
         diagnostics.record(CheckDiagnostics.Context.COMBAT_ATTACK, new IllegalArgumentException());
         diagnostics.record(CheckDiagnostics.Context.GHOST_HAND, new IllegalArgumentException());
         diagnostics.record(CheckDiagnostics.Context.COMBAT_ATTACK, new IllegalArgumentException());
@@ -61,14 +72,21 @@ class CheckDiagnosticsTest {
         assertTrue(records.getLast().getMessage().contains("suppressed_since_last_log=0"));
     }
 
-    @Test void fatalErrorsAreRethrownEvenInsideAnActiveSuppressionWindow() {
+    @Test
+    void fatalErrorsAreRethrownEvenInsideAnActiveSuppressionWindow() {
         diagnostics.record(CheckDiagnostics.Context.WALL_HIT, new IllegalStateException());
         var fatal = new OutOfMemoryError("test only");
-        assertSame(fatal, assertThrows(OutOfMemoryError.class,
-                () -> diagnostics.record(CheckDiagnostics.Context.WALL_HIT, fatal)));
+        assertSame(
+                fatal,
+                assertThrows(
+                        OutOfMemoryError.class,
+                        () -> diagnostics.record(CheckDiagnostics.Context.WALL_HIT, fatal)));
         var death = new ThreadDeath();
-        assertSame(death, assertThrows(ThreadDeath.class,
-                () -> diagnostics.record(CheckDiagnostics.Context.WALL_HIT, death)));
+        assertSame(
+                death,
+                assertThrows(
+                        ThreadDeath.class,
+                        () -> diagnostics.record(CheckDiagnostics.Context.WALL_HIT, death)));
         assertEquals(1, records.size());
     }
 }

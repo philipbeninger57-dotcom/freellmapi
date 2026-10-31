@@ -1,6 +1,3 @@
-/*
- * Decompiled with CFR 0.152.
- */
 package de.kyrosmp.anticheat.gui;
 
 import java.time.Instant;
@@ -15,33 +12,39 @@ public final class GuiText {
     private final DateTimeFormatter fallback;
 
     public GuiText(String pattern, String zone) {
-        DateTimeFormatter f;
         ZoneId zoneId;
         try {
-            zoneId = zone == null || zone.isBlank() || zone.equalsIgnoreCase("system") ? ZoneId.systemDefault() : ZoneId.of(zone);
-        }
-        catch (RuntimeException ex) {
+            zoneId =
+                    zone != null && !zone.isBlank() && !zone.equalsIgnoreCase("system")
+                            ? ZoneId.of(zone)
+                            : ZoneId.systemDefault();
+        } catch (RuntimeException ignored) {
             zoneId = ZoneId.systemDefault();
         }
+
+        DateTimeFormatter f;
         try {
             f = DateTimeFormatter.ofPattern(pattern, Locale.GERMANY);
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ignored) {
             f = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss", Locale.GERMANY);
         }
+
         this.formatter = f.withZone(zoneId);
-        this.fallback = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss", Locale.GERMANY).withZone(zoneId);
+        this.fallback =
+                DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss", Locale.GERMANY).withZone(zoneId);
     }
 
     public String time(long epochMs) {
         if (epochMs <= 0L) {
             return "-";
-        }
-        Instant instant = Instant.ofEpochMilli(epochMs);
-        try {
-            return this.formatter.format(instant);
-        } catch (RuntimeException ex) {
-            return this.fallback.format(instant);
+        } else {
+            Instant instant = Instant.ofEpochMilli(epochMs);
+
+            try {
+                return this.formatter.format(instant);
+            } catch (RuntimeException ignored) {
+                return this.fallback.format(instant);
+            }
         }
     }
 
@@ -53,60 +56,67 @@ public final class GuiText {
         long s = Math.max(0L, (now - then) / 1000L);
         if (s < 60L) {
             return s + "s ago";
-        }
-        if (s < 3600L) {
+        } else if (s < 3600L) {
             return s / 60L + "m ago";
+        } else {
+            return s < 86400L ? s / 3600L + "h ago" : s / 86400L + "d ago";
         }
-        if (s < 86400L) {
-            return s / 3600L + "h ago";
-        }
-        return s / 86400L + "d ago";
     }
 
     public static List<String> wrap(String text, int width, String colorPrefix) {
         if (width <= 0) {
             throw new IllegalArgumentException("width must be positive");
-        }
-        ArrayList<String> out = new ArrayList<String>();
-        if (text == null || text.isBlank()) {
-            return out;
-        }
-        StringBuilder line = new StringBuilder();
-        for (String word : text.trim().split("\\s+")) {
-            while (word.length() > width) {
-                if (line.length() > 0) {
-                    out.add(colorPrefix + String.valueOf(line));
-                    line.setLength(0);
+        } else {
+            ArrayList<String> out = new ArrayList<>();
+            if (text != null && !text.isBlank()) {
+                StringBuilder line = new StringBuilder();
+                for (String token : text.trim().split("\\s+")) {
+                    String word;
+                    for (word = token; word.length() > width; word = word.substring(width)) {
+                        if (line.length() > 0) {
+                            out.add(colorPrefix + line);
+                            line.setLength(0);
+                        }
+
+                        out.add(colorPrefix + word.substring(0, width));
+                    }
+
+                    if (line.length() > 0 && line.length() + 1 + word.length() > width) {
+                        out.add(colorPrefix + line);
+                        line.setLength(0);
+                    }
+
+                    if (line.length() > 0) {
+                        line.append(' ');
+                    }
+
+                    line.append(word);
                 }
-                out.add(colorPrefix + word.substring(0, width));
-                word = word.substring(width);
+
+                if (line.length() > 0) {
+                    out.add(colorPrefix + line);
+                }
+
+                return out;
+            } else {
+                return out;
             }
-            if (line.length() > 0 && line.length() + 1 + word.length() > width) {
-                out.add(colorPrefix + String.valueOf(line));
-                line.setLength(0);
-            }
-            if (line.length() > 0) {
-                line.append(' ');
-            }
-            line.append(word);
         }
-        if (line.length() > 0) {
-            out.add(colorPrefix + String.valueOf(line));
-        }
-        return out;
     }
 
     public static List<String> details(String details, int width, String colorPrefix) {
-        ArrayList<String> out = new ArrayList<String>();
+        ArrayList<String> out = new ArrayList<>();
         if (details == null) {
             return out;
+        } else {
+            for (String part : details.split(";")) {
+                String p = part.trim();
+                if (!p.isEmpty()) {
+                    out.addAll(wrap(p, width, colorPrefix));
+                }
+            }
+
+            return out;
         }
-        for (String part : details.split(";")) {
-            String p = part.trim();
-            if (p.isEmpty()) continue;
-            out.addAll(GuiText.wrap(p, width, colorPrefix));
-        }
-        return out;
     }
 }
-

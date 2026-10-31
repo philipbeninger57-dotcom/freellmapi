@@ -1,14 +1,11 @@
-/*
- * Decompiled with CFR 0.152.
- */
 package de.kyrosmp.anticheat.flag;
 
-import de.kyrosmp.anticheat.flag.Confidence;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class FlagThrottle {
-    private final ConcurrentHashMap<Key, State> states = new ConcurrentHashMap();
+    private final ConcurrentHashMap<FlagThrottle.Key, FlagThrottle.State> states =
+            new ConcurrentHashMap<>();
     private volatile long duplicateWindowMs;
     private volatile long mergeWindowMs;
 
@@ -23,35 +20,49 @@ public final class FlagThrottle {
 
     public boolean isDuplicate(UUID player, String check, long now) {
         boolean[] dup = new boolean[1];
-        this.states.compute(new Key(player, check), (k, s) -> {
-            State st;
-            State state = st = s == null ? new State() : s;
-            if (now >= st.lastAcceptedAt && now - st.lastAcceptedAt < this.duplicateWindowMs) {
-                dup[0] = true;
-            } else {
-                st.lastAcceptedAt = now;
-            }
-            return st;
-        });
+        this.states.compute(
+                new FlagThrottle.Key(player, check),
+                (k, s) -> {
+                    FlagThrottle.State st = s == null ? new FlagThrottle.State() : s;
+                    if (now >= st.lastAcceptedAt
+                            && now - st.lastAcceptedAt < this.duplicateWindowMs) {
+                        dup[0] = true;
+                    } else {
+                        st.lastAcceptedAt = now;
+                    }
+
+                    return st;
+                });
         return dup[0];
     }
 
-    public Decision register(UUID player, String check, long now, Confidence confidence, String candidateId) {
-        Decision[] out = new Decision[1];
-        this.states.compute(new Key(player, check), (k, s) -> {
-            State st;
-            State state = st = s == null ? new State() : s;
-            if (st.lastStoredId != null && now >= st.lastStoredAt && now - st.lastStoredAt < this.mergeWindowMs) {
-                st.storedConfidence = Confidence.max(st.storedConfidence, confidence);
-                out[0] = new Decision(Action.MERGE, st.lastStoredId, st.storedConfidence);
-            } else {
-                st.lastStoredId = candidateId;
-                st.lastStoredAt = now;
-                st.storedConfidence = confidence;
-                out[0] = new Decision(Action.STORE, candidateId, confidence);
-            }
-            return st;
-        });
+    public FlagThrottle.Decision register(
+            UUID player, String check, long now, Confidence confidence, String candidateId) {
+        FlagThrottle.Decision[] out = new FlagThrottle.Decision[1];
+        this.states.compute(
+                new FlagThrottle.Key(player, check),
+                (k, s) -> {
+                    FlagThrottle.State st = s == null ? new FlagThrottle.State() : s;
+                    if (st.lastStoredId != null
+                            && now >= st.lastStoredAt
+                            && now - st.lastStoredAt < this.mergeWindowMs) {
+                        st.storedConfidence = Confidence.max(st.storedConfidence, confidence);
+                        out[0] =
+                                new FlagThrottle.Decision(
+                                        FlagThrottle.Action.MERGE,
+                                        st.lastStoredId,
+                                        st.storedConfidence);
+                    } else {
+                        st.lastStoredId = candidateId;
+                        st.lastStoredAt = now;
+                        st.storedConfidence = confidence;
+                        out[0] =
+                                new FlagThrottle.Decision(
+                                        FlagThrottle.Action.STORE, candidateId, confidence);
+                    }
+
+                    return st;
+                });
         return out[0];
     }
 
@@ -60,33 +71,32 @@ public final class FlagThrottle {
     }
 
     public void cleanup(long now, long idleMs) {
-        this.states.entrySet().removeIf(e -> now - ((State)e.getValue()).lastAcceptedAt > idleMs && now - ((State)e.getValue()).lastStoredAt > idleMs);
+        this.states
+                .entrySet()
+                .removeIf(
+                        e ->
+                                now - e.getValue().lastAcceptedAt > idleMs
+                                        && now - e.getValue().lastStoredAt > idleMs);
     }
 
     public int size() {
         return this.states.size();
     }
 
-    private record Key(UUID player, String check) {
+    public static enum Action {
+        STORE,
+        MERGE;
     }
 
-    public record Decision(Action action, String flagId, Confidence confidence) {
-    }
+    public static record Decision(
+            FlagThrottle.Action action, String flagId, Confidence confidence) {}
+
+    private static record Key(UUID player, String check) {}
 
     private static final class State {
         long lastAcceptedAt = -4611686018427387904L;
         long lastStoredAt = -4611686018427387904L;
         String lastStoredId;
         Confidence storedConfidence;
-
-        private State() {
-        }
-    }
-
-    public static enum Action {
-        STORE,
-        MERGE;
-
     }
 }
-

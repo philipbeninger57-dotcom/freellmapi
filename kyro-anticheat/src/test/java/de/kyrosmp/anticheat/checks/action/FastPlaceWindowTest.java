@@ -1,27 +1,33 @@
 package de.kyrosmp.anticheat.checks.action;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import de.kyrosmp.anticheat.core.CheckConfig;
 import de.kyrosmp.anticheat.core.PlayerData;
 import de.kyrosmp.anticheat.flag.FlagSink;
+
 import org.bukkit.configuration.MemoryConfiguration;
 import org.bukkit.entity.Player;
 import org.junit.jupiter.api.Test;
 
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.*;
-
 class FastPlaceWindowTest {
     private int flags;
-    private final FlagSink sink = new FlagSink() {
-        @Override public String flag(Player p, PlayerData d, String c, String r, String details) {
-            flags++;
-            return null;
-        }
-        @Override public void action(String id, String action) { }
-    };
+    private final FlagSink sink =
+            new FlagSink() {
+                @Override
+                public String flag(Player p, PlayerData d, String c, String r, String details) {
+                    flags++;
+                    return null;
+                }
 
-    @Test void largePlacementBurstUsesBoundedHistoryAndStillFlags() {
+                @Override
+                public void action(String id, String action) {}
+            };
+
+    @Test
+    void largePlacementBurstUsesBoundedHistoryAndStillFlags() {
         CheckConfig cfg = CheckConfig.defaults();
         BlockPlaceChecks check = new BlockPlaceChecks(sink, cfg);
         PlayerData d = new PlayerData(UUID.randomUUID(), "test");
@@ -30,7 +36,8 @@ class FastPlaceWindowTest {
         assertTrue(flags > 0);
     }
 
-    @Test void discardedOldTimestampsDoNotChangeRollingThreshold() {
+    @Test
+    void discardedOldTimestampsDoNotChangeRollingThreshold() {
         MemoryConfiguration config = new MemoryConfiguration();
         config.set("checks.fastplace.max-per-second", 3);
         config.set("checks.fastplace.buffer.flag-at", 1.0);

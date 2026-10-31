@@ -1,9 +1,10 @@
 package de.kyrosmp.anticheat.checks.movement;
 
 /**
- * Minimal re-implementation of the vanilla 1.21 player travel step (LivingEntity#aiStep/travelInAir)
- * on flat ground with an optional ceiling. Used to prove that the prediction layer never rejects
- * legitimate motion. Float/double conversions follow the vanilla code.
+ * Minimal re-implementation of the vanilla 1.21 player travel step
+ * (LivingEntity#aiStep/travelInAir) on flat ground with an optional ceiling. Used to prove that the
+ * prediction layer never rejects legitimate motion. Float/double conversions follow the vanilla
+ * code.
  */
 final class VanillaSim {
     double x;
@@ -16,8 +17,10 @@ final class VanillaSim {
     double groundY;
     double ceilingY = Double.POSITIVE_INFINITY;
     float blockFriction = 0.6f;
+
     /** movement_speed attribute value as the server reports it (includes sprint). */
     double attr = 0.13;
+
     boolean sprint = true;
     double gravity = 0.08;
     double jumpPower = 0.42;
@@ -46,7 +49,10 @@ final class VanillaSim {
             }
         }
         float f = onGround ? blockFriction : 1.0f;
-        float speed = onGround ? (float) attr * (0.21600002f / (f * f * f)) : (sprint ? 0.025999999f : 0.02f);
+        float speed =
+                onGround
+                        ? (float) attr * (0.21600002f / (f * f * f))
+                        : (sprint ? 0.025999999f : 0.02f);
         double fw = forward * 0.98f * inputScale;
         double st = strafe * 0.98f * inputScale;
         double len = fw * fw + st * st;

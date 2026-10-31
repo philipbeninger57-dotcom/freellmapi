@@ -1,8 +1,12 @@
 package de.kyrosmp.anticheat.checks.combat;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import de.kyrosmp.anticheat.core.CheckConfig;
 import de.kyrosmp.anticheat.core.PlayerData;
+
 import io.papermc.paper.threadedregions.scheduler.EntityScheduler;
+
 import org.bukkit.GameMode;
 import org.bukkit.configuration.MemoryConfiguration;
 import org.bukkit.entity.Player;
@@ -13,27 +17,41 @@ import java.lang.reflect.Proxy;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
 class VelocityCheckTest {
     private static Player player(AtomicInteger scheduled) {
-        EntityScheduler scheduler = (EntityScheduler) Proxy.newProxyInstance(
-                EntityScheduler.class.getClassLoader(), new Class<?>[]{EntityScheduler.class},
-                (proxy, method, args) -> {
-                    if (method.getName().equals("runDelayed")) {
-                        scheduled.incrementAndGet();
-                        return null;
-                    }
-                    throw new UnsupportedOperationException(method.getName());
-                });
-        return (Player) Proxy.newProxyInstance(Player.class.getClassLoader(), new Class<?>[]{Player.class},
-                (proxy, method, args) -> switch (method.getName()) {
-                    case "getGameMode" -> GameMode.SURVIVAL;
-                    case "getScheduler" -> scheduler;
-                    case "getPing" -> 0;
-                    case "isDead", "getAllowFlight", "isFlying", "isGliding", "isInsideVehicle", "isSwimming", "isRiptiding" -> false;
-                    default -> throw new UnsupportedOperationException(method.getName());
-                });
+        EntityScheduler scheduler =
+                (EntityScheduler)
+                        Proxy.newProxyInstance(
+                                EntityScheduler.class.getClassLoader(),
+                                new Class<?>[] {EntityScheduler.class},
+                                (proxy, method, args) -> {
+                                    if (method.getName().equals("runDelayed")) {
+                                        scheduled.incrementAndGet();
+                                        return null;
+                                    }
+                                    throw new UnsupportedOperationException(method.getName());
+                                });
+        return (Player)
+                Proxy.newProxyInstance(
+                        Player.class.getClassLoader(),
+                        new Class<?>[] {Player.class},
+                        (proxy, method, args) ->
+                                switch (method.getName()) {
+                                    case "getGameMode" -> GameMode.SURVIVAL;
+                                    case "getScheduler" -> scheduler;
+                                    case "getPing" -> 0;
+                                    case "isDead",
+                                            "getAllowFlight",
+                                            "isFlying",
+                                            "isGliding",
+                                            "isInsideVehicle",
+                                            "isSwimming",
+                                            "isRiptiding" ->
+                                            false;
+                                    default ->
+                                            throw new UnsupportedOperationException(
+                                                    method.getName());
+                                });
     }
 
     @Test

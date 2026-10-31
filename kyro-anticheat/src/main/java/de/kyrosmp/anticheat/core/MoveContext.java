@@ -1,13 +1,5 @@
-/*
- * Decompiled with CFR 0.152.
- * 
- * Could not load the following classes:
- *  org.bukkit.GameMode
- *  org.bukkit.World
- */
 package de.kyrosmp.anticheat.core;
 
-import de.kyrosmp.anticheat.core.MoveGeometry;
 import org.bukkit.GameMode;
 import org.bukkit.World;
 
@@ -60,7 +52,7 @@ public final class MoveContext {
     public final boolean sneaking;
     public final MoveGeometry geo;
 
-    private MoveContext(Builder b) {
+    private MoveContext(MoveContext.Builder b) {
         this.now = b.now;
         this.nanoNow = b.nanoNow;
         this.world = b.world;
@@ -114,8 +106,8 @@ public final class MoveContext {
         return Math.sqrt(this.dx * this.dx + this.dy * this.dy + this.dz * this.dz);
     }
 
-    public static Builder builder() {
-        return new Builder();
+    public static MoveContext.Builder builder() {
+        return new MoveContext.Builder();
     }
 
     public static final class Builder {
@@ -147,7 +139,7 @@ public final class MoveContext {
         int ping;
         int jumpAmplifier = -1;
         int speedAmplifier = -1;
-        float walkSpeed = 0.2f;
+        float walkSpeed = 0.2F;
         double movementSpeedAttr = Double.NaN;
         double jumpStrengthAttr = Double.NaN;
         double gravityAttr = Double.NaN;
@@ -162,158 +154,159 @@ public final class MoveContext {
         boolean sneaking;
         MoveGeometry geo;
 
-        public Builder time(long now, long nanoNow) {
+        public MoveContext.Builder time(long now, long nanoNow) {
             this.now = now;
             this.nanoNow = nanoNow;
             return this;
         }
 
-        public Builder world(World w) {
+        public MoveContext.Builder world(World w) {
             this.world = w;
             return this;
         }
 
-        public Builder from(double x, double y, double z) {
+        public MoveContext.Builder from(double x, double y, double z) {
             this.fromX = x;
             this.fromY = y;
             this.fromZ = z;
             return this;
         }
 
-        public Builder to(double x, double y, double z) {
+        public MoveContext.Builder to(double x, double y, double z) {
             this.toX = x;
             this.toY = y;
             this.toZ = z;
             return this;
         }
 
-        public Builder rotation(float yaw, float pitch) {
+        public MoveContext.Builder rotation(float yaw, float pitch) {
             this.yaw = yaw;
             this.pitch = pitch;
             return this;
         }
 
-        public Builder gameMode(GameMode gm) {
+        public MoveContext.Builder gameMode(GameMode gm) {
             this.gameMode = gm;
             return this;
         }
 
-        public Builder allowFlight(boolean v) {
+        public MoveContext.Builder allowFlight(boolean v) {
             this.allowFlight = v;
             return this;
         }
 
-        public Builder flying(boolean v) {
+        public MoveContext.Builder flying(boolean v) {
             this.flying = v;
             return this;
         }
 
-        public Builder gliding(boolean v) {
+        public MoveContext.Builder gliding(boolean v) {
             this.gliding = v;
             return this;
         }
 
-        public Builder riptiding(boolean v) {
+        public MoveContext.Builder riptiding(boolean v) {
             this.riptiding = v;
             return this;
         }
 
-        public Builder swimming(boolean v) {
+        public MoveContext.Builder swimming(boolean v) {
             this.swimming = v;
             return this;
         }
 
-        public Builder insideVehicle(boolean v) {
+        public MoveContext.Builder insideVehicle(boolean v) {
             this.insideVehicle = v;
             return this;
         }
 
-        public Builder sprinting(boolean v) {
+        public MoveContext.Builder sprinting(boolean v) {
             this.sprinting = v;
             return this;
         }
 
-        public Builder clientOnGround(boolean v) {
+        public MoveContext.Builder clientOnGround(boolean v) {
             this.clientOnGround = v;
             return this;
         }
 
-        public Builder invulnerable(boolean v) {
+        public MoveContext.Builder invulnerable(boolean v) {
             this.invulnerable = v;
             return this;
         }
 
-        public Builder holdingMace(boolean v) {
+        public MoveContext.Builder holdingMace(boolean v) {
             this.holdingMace = v;
             return this;
         }
 
-        public Builder fallDamageEnabled(boolean v) {
+        public MoveContext.Builder fallDamageEnabled(boolean v) {
             this.fallDamageEnabled = v;
             return this;
         }
 
-        public Builder levitation(boolean v) {
+        public MoveContext.Builder levitation(boolean v) {
             this.levitation = v;
             return this;
         }
 
-        public Builder slowFalling(boolean v) {
+        public MoveContext.Builder slowFalling(boolean v) {
             this.slowFalling = v;
             return this;
         }
 
-        public Builder ping(int v) {
+        public MoveContext.Builder ping(int v) {
             this.ping = v;
             return this;
         }
 
-        public Builder jumpAmplifier(int v) {
+        public MoveContext.Builder jumpAmplifier(int v) {
             this.jumpAmplifier = v;
             return this;
         }
 
-        public Builder speedAmplifier(int v) {
+        public MoveContext.Builder speedAmplifier(int v) {
             this.speedAmplifier = v;
             return this;
         }
 
-        public Builder walkSpeed(float v) {
+        public MoveContext.Builder walkSpeed(float v) {
             this.walkSpeed = v;
             return this;
         }
 
-        public Builder movementSpeedAttr(double v) {
+        public MoveContext.Builder movementSpeedAttr(double v) {
             this.movementSpeedAttr = v;
             return this;
         }
 
-        public Builder jumpStrengthAttr(double v) {
+        public MoveContext.Builder jumpStrengthAttr(double v) {
             this.jumpStrengthAttr = v;
             return this;
         }
 
-        public Builder gravityAttr(double v) {
+        public MoveContext.Builder gravityAttr(double v) {
             this.gravityAttr = v;
             return this;
         }
 
-        public Builder safeFallAttr(double v) {
+        public MoveContext.Builder safeFallAttr(double v) {
             this.safeFallAttr = v;
             return this;
         }
 
-        public Builder fallDamageMultiplierAttr(double v) {
+        public MoveContext.Builder fallDamageMultiplierAttr(double v) {
             this.fallDamageMultiplierAttr = v;
             return this;
         }
 
-        public Builder stepHeightAttr(double v) {
+        public MoveContext.Builder stepHeightAttr(double v) {
             this.stepHeightAttr = v;
             return this;
         }
 
-        public Builder itemUse(boolean using, int usedTicks, int remainingTicks, double speedMultiplier) {
+        public MoveContext.Builder itemUse(
+                boolean using, int usedTicks, int remainingTicks, double speedMultiplier) {
             this.usingItem = using;
             this.itemUseTicks = usedTicks;
             this.itemUseRemaining = remainingTicks;
@@ -321,17 +314,17 @@ public final class MoveContext {
             return this;
         }
 
-        public Builder lungeWeapon(boolean v) {
+        public MoveContext.Builder lungeWeapon(boolean v) {
             this.lungeWeapon = v;
             return this;
         }
 
-        public Builder sneaking(boolean v) {
+        public MoveContext.Builder sneaking(boolean v) {
             this.sneaking = v;
             return this;
         }
 
-        public Builder geometry(MoveGeometry g) {
+        public MoveContext.Builder geometry(MoveGeometry g) {
             this.geo = g;
             return this;
         }
@@ -339,9 +332,9 @@ public final class MoveContext {
         public MoveContext build() {
             if (this.geo == null) {
                 throw new IllegalStateException("geometry required");
+            } else {
+                return new MoveContext(this);
             }
-            return new MoveContext(this);
         }
     }
 }
-

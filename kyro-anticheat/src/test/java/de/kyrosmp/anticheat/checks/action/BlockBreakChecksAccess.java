@@ -5,8 +5,7 @@ import de.kyrosmp.anticheat.flag.FlagSink;
 
 /** Test access to the package-private line-of-sight test. */
 public final class BlockBreakChecksAccess {
-    private BlockBreakChecksAccess() {
-    }
+    private BlockBreakChecksAccess() {}
 
     public static BlockBreakChecks create(FlagSink sink, StrictConfig strict, boolean hidden) {
         BlockBreakChecks checks = new BlockBreakChecks(sink, strict);

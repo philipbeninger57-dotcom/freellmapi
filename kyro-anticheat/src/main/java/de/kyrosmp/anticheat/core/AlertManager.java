@@ -1,15 +1,12 @@
-/*
- * Decompiled with CFR 0.152.
- * 
- * Could not load the following classes:
- *  org.bukkit.Bukkit
- *  org.bukkit.ChatColor
- *  org.bukkit.entity.Player
- *  org.bukkit.plugin.Plugin
- */
 package de.kyrosmp.anticheat.core;
 
 import de.kyrosmp.anticheat.flag.Confidence;
+
+import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
+import org.bukkit.entity.Player;
+import org.bukkit.plugin.Plugin;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -17,16 +14,12 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.logging.Logger;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
-import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
-import org.bukkit.entity.Player;
-import org.bukkit.plugin.Plugin;
+import java.util.logging.Logger;
 
 public final class AlertManager {
-    public static final String PREFIX = "\u00a78[\u00a75KYRO-AC\u00a78] \u00a77";
+    public static final String PREFIX = "§8[§5KYRO-AC§8] §7";
     private final Plugin plugin;
     private final Logger log;
     private final Set<UUID> disabled = ConcurrentHashMap.newKeySet();
@@ -36,7 +29,6 @@ public final class AlertManager {
     private final List<String> pending = new ArrayList<>();
     private boolean flushScheduled;
     private long overflow;
-    // Hooks keep scheduling independently testable without a running server.
     Consumer<Runnable> scheduleGlobal;
     Supplier<Collection<? extends Player>> onlinePlayers = Bukkit::getOnlinePlayers;
 
@@ -53,43 +45,67 @@ public final class AlertManager {
     public boolean toggle(Player p) {
         if (this.disabled.remove(p.getUniqueId())) {
             return true;
+        } else {
+            this.disabled.add(p.getUniqueId());
+            return false;
         }
-        this.disabled.add(p.getUniqueId());
-        return false;
     }
 
-    public void flagAlert(String player, String check, double vl, Confidence confidence, String details, int ping) {
-        this.send(String.format(Locale.US, "\u00a7f%s \u00a77flagged \u00a7d%s \u00a78(\u00a7fVL %.1f\u00a78, %s\u00a78) \u00a78%s \u00a78[%dms]", player, check, vl, confidence.colored(), details, ping));
+    public void flagAlert(
+            String player,
+            String check,
+            double vl,
+            Confidence confidence,
+            String details,
+            int ping) {
+        this.send(
+                String.format(
+                        Locale.US,
+                        "§f%s §7flagged §d%s §8(§fVL %.1f§8, %s§8) §8%s §8[%dms]",
+                        player,
+                        check,
+                        vl,
+                        confidence.colored(),
+                        details,
+                        ping));
     }
 
     public void send(String message) {
-        String msg = ChatColor.translateAlternateColorCodes('&', PREFIX + message);
-        // Console evidence remains immediate even if staff delivery is overloaded.
+        String msg = ChatColor.translateAlternateColorCodes('&', "§8[§5KYRO-AC§8] §7" + message);
         if (this.console) {
             this.log.info(ChatColor.stripColor(msg));
         }
+
         synchronized (this.batchLock) {
-            if (this.pending.size() < MAX_PENDING_ALERTS) {
+            if (this.pending.size() < 256) {
                 this.pending.add(msg);
             } else {
-                ++this.overflow;
+                this.overflow++;
             }
+
             if (this.flushScheduled) {
                 return;
             }
+
             this.flushScheduled = true;
         }
+
         try {
             this.scheduleGlobal.accept(this::flush);
         } catch (RuntimeException ex) {
             long lost;
             synchronized (this.batchLock) {
-                lost = this.pending.size() + this.overflow;
+                lost = (long) this.pending.size() + this.overflow;
                 this.pending.clear();
-                this.overflow = 0;
+                this.overflow = 0L;
                 this.flushScheduled = false;
             }
-            this.log.warning("Could not schedule " + lost + " staff alerts: " + ex.getClass().getSimpleName());
+
+            this.log.warning(
+                    "Could not schedule "
+                            + lost
+                            + " staff alerts: "
+                            + ex.getClass().getSimpleName());
         }
     }
 
@@ -100,26 +116,39 @@ public final class AlertManager {
             batch = new ArrayList<>(this.pending);
             this.pending.clear();
             dropped = this.overflow;
-            this.overflow = 0;
+            this.overflow = 0L;
             this.flushScheduled = false;
         }
-        if (dropped > 0) {
-            String summary = dropped + " additional staff alerts omitted during overload; review flag history.";
-            batch.add(PREFIX + summary);
+
+        if (dropped > 0L) {
+            String summary =
+                    dropped
+                            + " additional staff alerts omitted during overload; review flag"
+                            + " history.";
+            batch.add("§8[§5KYRO-AC§8] §7" + summary);
             this.log.warning(summary);
         }
+
         String[] messages = batch.toArray(String[]::new);
+
         for (Player p : this.onlinePlayers.get()) {
             try {
-                p.getScheduler().run(this.plugin, task -> {
-                    // Permissions and alert preferences may change while tasks wait.
-                    if (p.hasPermission("kyroac.alerts") && !this.disabled.contains(p.getUniqueId())) {
-                        p.sendMessage(messages);
-                    }
-                }, null);
+                p.getScheduler()
+                        .run(
+                                this.plugin,
+                                task -> {
+                                    if (p.hasPermission("kyroac.alerts")
+                                            && !this.disabled.contains(p.getUniqueId())) {
+                                        p.sendMessage(messages);
+                                    }
+                                },
+                                null);
             } catch (RuntimeException ex) {
-                this.log.warning("Could not schedule staff alert batch for " + p.getUniqueId()
-                        + ": " + ex.getClass().getSimpleName());
+                this.log.warning(
+                        "Could not schedule staff alert batch for "
+                                + p.getUniqueId()
+                                + ": "
+                                + ex.getClass().getSimpleName());
             }
         }
     }

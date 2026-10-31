@@ -1,12 +1,9 @@
-/*
- * Decompiled with CFR 0.152.
- */
 package de.kyrosmp.anticheat.flag;
 
 public enum Confidence {
-    LOW("Low", "\u00a7a"),
-    MEDIUM("Medium", "\u00a7e"),
-    HIGH("High", "\u00a7c");
+    LOW("Low", "§a"),
+    MEDIUM("Medium", "§e"),
+    HIGH("High", "§c");
 
     private final String label;
     private final String color;
@@ -31,23 +28,22 @@ public enum Confidence {
     public static Confidence max(Confidence a, Confidence b) {
         if (a == null) {
             return b;
-        }
-        if (b == null) {
+        } else if (b == null) {
             return a;
+        } else {
+            return a.ordinal() >= b.ordinal() ? a : b;
         }
-        return a.ordinal() >= b.ordinal() ? a : b;
     }
 
     public static Confidence parse(String value) {
         if (value == null) {
             return LOW;
-        }
-        try {
-            return Confidence.valueOf(value);
-        }
-        catch (IllegalArgumentException ex) {
-            return LOW;
+        } else {
+            try {
+                return valueOf(value);
+            } catch (IllegalArgumentException ignored) {
+                return LOW;
+            }
         }
     }
 }
-

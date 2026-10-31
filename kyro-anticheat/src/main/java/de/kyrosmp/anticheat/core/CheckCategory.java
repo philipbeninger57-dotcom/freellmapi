@@ -1,6 +1,3 @@
-/*
- * Decompiled with CFR 0.152.
- */
 package de.kyrosmp.anticheat.core;
 
 public enum CheckCategory {
@@ -33,13 +30,12 @@ public enum CheckCategory {
     public static CheckCategory parse(String value) {
         if (value == null) {
             return OTHER;
-        }
-        try {
-            return CheckCategory.valueOf(value);
-        }
-        catch (IllegalArgumentException ex) {
-            return OTHER;
+        } else {
+            try {
+                return valueOf(value);
+            } catch (IllegalArgumentException ignored) {
+                return OTHER;
+            }
         }
     }
 }
-

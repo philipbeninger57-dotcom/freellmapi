@@ -1,15 +1,5 @@
-/*
- * Decompiled with CFR 0.152.
- * 
- * Could not load the following classes:
- *  org.bukkit.GameMode
- *  org.bukkit.entity.Player
- */
 package de.kyrosmp.anticheat.core;
 
-import de.kyrosmp.anticheat.core.CheckConfig;
-import de.kyrosmp.anticheat.core.MoveContext;
-import de.kyrosmp.anticheat.core.PlayerData;
 import org.bukkit.GameMode;
 import org.bukkit.entity.Player;
 
@@ -37,60 +27,41 @@ public final class ExemptionManager {
         long now = m.now;
         GameMode gm = m.gameMode;
         if (gm == GameMode.CREATIVE || gm == GameMode.SPECTATOR) {
-            return "Gamemode " + String.valueOf(gm);
-        }
-        if (m.allowFlight) {
+            return "Gamemode " + gm;
+        } else if (m.allowFlight) {
             return "Flight allowed";
-        }
-        if (m.flying) {
+        } else if (m.flying) {
             return "Flying";
-        }
-        if (m.gliding) {
+        } else if (m.gliding) {
             return "Elytra";
-        }
-        if (m.insideVehicle) {
+        } else if (m.insideVehicle) {
             return "Vehicle";
-        }
-        if (m.swimming) {
+        } else if (m.swimming) {
             return "Swimming";
-        }
-        if (m.riptiding) {
+        } else if (m.riptiding) {
             return "Riptide";
-        }
-        if (now - d.lastGlide < c.graceElytraMs()) {
+        } else if (now - d.lastGlide < c.graceElytraMs()) {
             return "After elytra";
-        }
-        if (now - d.lastRiptide < c.graceRiptideMs()) {
+        } else if (now - d.lastRiptide < c.graceRiptideMs()) {
             return "After riptide";
-        }
-        if (now - d.lastSwimming < 1200L) {
+        } else if (now - d.lastSwimming < 1200L) {
             return "After swimming";
-        }
-        if (now - d.lastVehicle < 1500L) {
+        } else if (now - d.lastVehicle < 1500L) {
             return "After vehicle";
-        }
-        if (m.levitation) {
+        } else if (m.levitation) {
             return "Levitation";
-        }
-        if (m.slowFalling) {
+        } else if (m.slowFalling) {
             return "Slow Falling";
-        }
-        if (now - d.lastLiquid < 600L) {
+        } else if (now - d.lastLiquid < 600L) {
             return "Liquid/climbable";
-        }
-        if (now - d.lastBounceSurface < 3500L && !d.lastGround) {
+        } else if (now - d.lastBounceSurface < 3500L && !d.lastGround) {
             return "Slime/bed/honey bounce";
-        }
-        if (now - d.lastTeleport < c.graceTeleportMs()) {
+        } else if (now - d.lastTeleport < c.graceTeleportMs()) {
             return "Teleport";
-        }
-        if (now < d.velocityGraceUntil) {
+        } else if (now < d.velocityGraceUntil) {
             return "Velocity/knockback";
+        } else {
+            return now - d.lastDamage < 1500L ? "Recently damaged" : null;
         }
-        if (now - d.lastDamage < 1500L) {
-            return "Recently damaged";
-        }
-        return null;
     }
 }
-

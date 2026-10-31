@@ -1,12 +1,9 @@
-/*
- * Decompiled with CFR 0.152.
- */
 package de.kyrosmp.anticheat.flag;
 
 public enum FlagStatus {
-    NEW("New", "\u00a7c"),
-    REVIEWED("Reviewed", "\u00a7e"),
-    RESOLVED("Resolved", "\u00a7a");
+    NEW("New", "§c"),
+    REVIEWED("Reviewed", "§e"),
+    RESOLVED("Resolved", "§a");
 
     private final String label;
     private final String color;
@@ -27,13 +24,12 @@ public enum FlagStatus {
     public static FlagStatus parse(String value) {
         if (value == null) {
             return NEW;
-        }
-        try {
-            return FlagStatus.valueOf(value);
-        }
-        catch (IllegalArgumentException ex) {
-            return NEW;
+        } else {
+            try {
+                return valueOf(value);
+            } catch (IllegalArgumentException ignored) {
+                return NEW;
+            }
         }
     }
 }
-
