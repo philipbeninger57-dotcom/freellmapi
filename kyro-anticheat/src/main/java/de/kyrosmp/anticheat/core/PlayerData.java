@@ -37,7 +37,6 @@ public final class PlayerData {
     public volatile long lastAttack;
     public volatile long lastMaceSmashAt;
     public volatile long lastMoveNanos;
-    public volatile long timerGraceUntil;
     public volatile long landedAt;
     public volatile long lastSafeAt;
     public volatile long switchWindowStart;
@@ -168,6 +167,7 @@ public final class PlayerData {
     public long predLastAt;
     public double predAttrPeak = Double.NaN;
     public long predAttrPeakAt;
+    public double predAttrLast = Double.NaN;
     public static final int IMPULSE_SLOTS = 4;
     public final double[] impulseVyRing = new double[4];
     public final double[] impulseHRing = new double[4];
@@ -201,6 +201,23 @@ public final class PlayerData {
     public double scaffoldFaceBuffer;
     public volatile double lastMoveDy;
 
+    // Timer A: lag credit (see MovementChecks#checkTimer) and region heartbeat for stall detection.
+    public long timerCreditUntil;
+    public volatile long heartbeatAtNanos;
+    public volatile long heartbeatGapMs;
+
+    // Sprint A / hunger-aware speed prediction.
+    public long lastSprintPossibleAt;
+    public volatile long lastFoodAbove6At;
+    public double sprintBuffer;
+
+    // NoSlow B: sneaking state of the previous judged move.
+    public boolean predSneaking;
+
+    // KillAura D (NoSwing): arm swings seen, evaluated a few ticks after each attack.
+    public volatile long swingSeq;
+    public volatile double noSwingBuffer;
+
     public void registerPredictionImpulse(double vx, double vy, double vz, long now) {
         if (Double.isFinite(vx) && Double.isFinite(vy) && Double.isFinite(vz)) {
             int slot = this.impulseNext;
@@ -212,6 +229,13 @@ public final class PlayerData {
         }
     }
 
+    /** Called every 5 ticks from the player's own scheduler; records how long the last gap was. */
+    public void heartbeat(long nanos) {
+        long previous = this.heartbeatAtNanos;
+        this.heartbeatGapMs = previous == 0L ? 0L : (nanos - previous) / 1_000_000L;
+        this.heartbeatAtNanos = nanos;
+    }
+
     public void resetPrediction(boolean velocityKnownZero) {
         this.predVy = velocityKnownZero ? 0.0 : Double.NaN;
         this.predVyLow = Double.NaN;
@@ -221,6 +245,7 @@ public final class PlayerData {
         this.predPrevGround = true;
         Arrays.fill(this.impulseUsedRing, true);
         this.noSlowMoves = 0;
+        this.predSneaking = false;
         this.hoverStillChecks = 0;
     }
 
@@ -238,7 +263,6 @@ public final class PlayerData {
     public void coolMovementBuffers() {
         this.speedBuffer = Math.max(0.0, this.speedBuffer - 0.8);
         this.flyBuffer = Math.max(0.0, this.flyBuffer - 0.8);
-        this.timerBalance = Math.min(this.timerBalance, 0.0);
         this.airTicks = 0;
         this.airSince = 0L;
         this.hoverTicks = 0;
@@ -304,10 +328,11 @@ public final class PlayerData {
             this.impulseVy = Double.NaN;
             this.graceFlyEvidence = false;
             this.elytraCeilingMin = Double.NaN;
-            double timerDebt = this.timerBalance;
             this.coolMovementBuffers();
-            if (ownSetback && timerDebt > 0.0) {
-                this.timerBalance = timerDebt;
+            if (!ownSetback) {
+                // A server teleport restarts the client's movement stream; an own setback keeps
+                // any timer debt so that rejected surplus moves still have to be paid back.
+                this.timerBalance = Math.min(this.timerBalance, 0.0);
             }
 
             this.kbTime = 0L;
@@ -337,6 +362,7 @@ public final class PlayerData {
             this.impulseY = Double.NaN;
             this.impulseVy = Double.NaN;
             this.coolMovementBuffers();
+            this.timerBalance = Math.min(this.timerBalance, 0.0);
             this.kbTime = 0L;
             this.teleportsApplied++;
             this.resetPrediction(false);
@@ -401,6 +427,9 @@ public final class PlayerData {
         this.nukerBuffer = 0.0;
         this.ghostHandBuffer = 0.0;
         this.scaffoldFaceBuffer = 0.0;
+        this.sprintBuffer = 0.0;
+        this.noSwingBuffer = 0.0;
+        this.timerBalance = 0.0;
         synchronized (this.elytraIncidents) {
             this.elytraIncidents.clear();
         }

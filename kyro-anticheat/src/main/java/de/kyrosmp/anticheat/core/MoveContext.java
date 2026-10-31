@@ -50,6 +50,13 @@ public final class MoveContext {
     public final double itemUseSpeed;
     public final boolean lungeWeapon;
     public final boolean sneaking;
+
+    /** Value of the {@code sneaking_speed} attribute (vanilla 0.3, raised by Swift Sneak). */
+    public final double sneakingSpeedAttr;
+
+    /** Hunger bar (0-20). Vanilla clients cannot start sprinting at 6 or below. */
+    public final int foodLevel;
+
     public final MoveGeometry geo;
 
     private MoveContext(MoveContext.Builder b) {
@@ -99,6 +106,8 @@ public final class MoveContext {
         this.itemUseSpeed = b.itemUseSpeed;
         this.lungeWeapon = b.lungeWeapon;
         this.sneaking = b.sneaking;
+        this.sneakingSpeedAttr = b.sneakingSpeedAttr;
+        this.foodLevel = b.foodLevel;
         this.geo = b.geo;
     }
 
@@ -152,6 +161,8 @@ public final class MoveContext {
         double itemUseSpeed = 0.2;
         boolean lungeWeapon;
         boolean sneaking;
+        double sneakingSpeedAttr = Double.NaN;
+        int foodLevel = 20;
         MoveGeometry geo;
 
         public MoveContext.Builder time(long now, long nanoNow) {
@@ -321,6 +332,16 @@ public final class MoveContext {
 
         public MoveContext.Builder sneaking(boolean v) {
             this.sneaking = v;
+            return this;
+        }
+
+        public MoveContext.Builder sneakingSpeedAttr(double v) {
+            this.sneakingSpeedAttr = v;
+            return this;
+        }
+
+        public MoveContext.Builder foodLevel(int v) {
+            this.foodLevel = v;
             return this;
         }
 

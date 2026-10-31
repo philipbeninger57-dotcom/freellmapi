@@ -80,7 +80,8 @@ public final class PredictionChecks {
                         && m.geo.climbableNearby()
                         && !m.geo.liquidNearby()
                         && !m.geo.stuckNearby();
-        double attr = this.speedAttribute(d, m, now);
+        boolean sprintPossible = sprintPossible(d, m, now);
+        double attr = this.speedAttribute(d, m, now, sprintPossible);
         double friction =
                 d.predPrevGround && now - d.predImpulseAppliedAt > 200L
                         ? (now - d.lastSlipperySurface < 1500L ? 0.91F : 0.54600006F)
@@ -228,9 +229,10 @@ public final class PredictionChecks {
             double carried = d.predH * friction;
             boolean mergeable = d.predHObserved <= 0.2 || carried - accel <= 0.0625;
             double mergeSlack = mergeable ? 0.0625 : 0.0;
-            double tightH = horizontalBound(carried, accel, attr, jumped, mergeable);
+            double tightH =
+                    horizontalBound(carried, accel, attr, jumped && sprintPossible, mergeable);
             double tolH = s.speedPredictionTolerance();
-            boolean noSlow =
+            boolean itemSlow =
                     s.noSlowEnabled()
                             && m.usingItem
                             && d.predUsingItem
@@ -240,19 +242,29 @@ public final class PredictionChecks {
                             && startGround
                             && groundNow
                             && !jumped;
+            double sneakSpeed = sneakSpeed(m);
+            boolean sneakSlow =
+                    s.noSlowEnabled()
+                            && m.sneaking
+                            && d.predSneaking
+                            && sneakSpeed < 0.85
+                            && startGround
+                            && groundNow
+                            && !jumped;
+            boolean noSlow = itemSlow || sneakSlow;
+            double slowFactor = (itemSlow ? m.itemUseSpeed : 1.0) * (sneakSlow ? sneakSpeed : 1.0);
             double tightSlow =
                     noSlow
                             ? horizontalBound(
-                                    carried,
-                                    attr * m.itemUseSpeed,
-                                    attr * m.itemUseSpeed,
-                                    false,
-                                    mergeable)
+                                    carried, attr * slowFactor, attr * slowFactor, false, mergeable)
                             : Double.NaN;
             double limitH = tightH + tolH;
             if (m.horizontal > limitH && !jumped && m.dy > 0.0 && m.geo.fromGrounded()) {
                 jumped = true;
-                tightH = Math.max(tightH, horizontalBound(carried, attr, attr, true, mergeable));
+                tightH =
+                        Math.max(
+                                tightH,
+                                horizontalBound(carried, attr, attr, sprintPossible, mergeable));
                 limitH = tightH + tolH;
             }
 
@@ -295,16 +307,25 @@ public final class PredictionChecks {
             if (!reject && noSlow) {
                 double limitSlow = Math.max(tightSlow + tolH, 0.13);
                 if (m.horizontal > limitSlow) {
+                    limitSlow += this.pushAllowance(p, m);
+                }
+                if (m.horizontal > limitSlow) {
                     if (++d.noSlowMoves >= 2 && !this.explainedByWorld(p, d, m, now)) {
                         excess = m.horizontal - limitSlow;
-                        check = "NoSlow A";
+                        check = itemSlow ? "NoSlow A" : "NoSlow B";
                         details =
                                 String.format(
                                         Locale.US,
-                                        "horizontal=%.4f; max=%.4f; item_speed=%.2f; use_ticks=%d",
+                                        "horizontal=%.4f; max=%.4f; item_speed=%s;"
+                                                + " sneak_speed=%s; use_ticks=%d",
                                         m.horizontal,
                                         limitSlow,
-                                        m.itemUseSpeed,
+                                        itemSlow
+                                                ? String.format(Locale.US, "%.2f", m.itemUseSpeed)
+                                                : "-",
+                                        sneakSlow
+                                                ? String.format(Locale.US, "%.2f", sneakSpeed)
+                                                : "-",
                                         m.itemUseTicks);
                         reject = true;
                     }
@@ -318,10 +339,17 @@ public final class PredictionChecks {
             if (hFromImpulse) {
                 usedImpulseH = true;
             } else {
+                // A tolerated slowed move (first strike) may really be faster than the slow bound,
+                // e.g. knockback momentum when landing while sneaking: carry what was observed,
+                // never more than the normal-speed bound.
                 carryH =
                         Math.min(
                                 m.horizontal + mergeSlack,
-                                noSlow ? Math.max(tightSlow, 0.0) : tightH);
+                                noSlow
+                                        ? Math.max(
+                                                Math.max(tightSlow, 0.0),
+                                                Math.min(m.horizontal, tightH))
+                                        : tightH);
             }
         }
 
@@ -373,6 +401,7 @@ public final class PredictionChecks {
             d.predPrevGround = startGround;
             d.predLastGroundStrict = groundNow;
             d.predUsingItem = m.usingItem;
+            d.predSneaking = m.sneaking;
         } else {
             d.predVy = 0.0;
             d.predVyLow = Double.NaN;
@@ -380,6 +409,7 @@ public final class PredictionChecks {
             d.predHObserved = 0.0;
             d.predPrevGround = startGround;
             d.predUsingItem = m.usingItem;
+            d.predSneaking = m.sneaking;
             d.noSlowMoves = 0;
         }
 
@@ -417,6 +447,7 @@ public final class PredictionChecks {
                 setbackAllowed = c.flySetback();
                 break;
             case "NoSlow A":
+            case "NoSlow B":
                 d.noSlowBuffer++;
                 flagAt = s.noSlowFlagAt();
                 setbackAllowed = c.speedSetback();
@@ -436,7 +467,7 @@ public final class PredictionChecks {
                 switch (check) {
                     case "Fly B" -> d.flyPredBuffer;
                     case "Step A" -> d.stepBuffer;
-                    case "NoSlow A" -> d.noSlowBuffer;
+                    case "NoSlow A", "NoSlow B" -> d.noSlowBuffer;
                     default -> d.speedPredBuffer;
                 };
         boolean prevent =
@@ -477,6 +508,7 @@ public final class PredictionChecks {
                     d.stepBuffer = 1.0;
                     break;
                 case "NoSlow A":
+                case "NoSlow B":
                     d.noSlowBuffer = 1.0;
                     break;
                 default:
@@ -492,6 +524,7 @@ public final class PredictionChecks {
             case "Fly B" -> "Vertical motion that gravity does not allow";
             case "Step A" -> "Stepped higher than the step height allows";
             case "NoSlow A" -> "Not slowed down while using an item";
+            case "NoSlow B" -> "Not slowed down while sneaking";
             default -> "Faster than the carried momentum allows";
         };
     }
@@ -569,7 +602,38 @@ public final class PredictionChecks {
         }
     }
 
+    /** Food level at or below which a vanilla client can neither start nor keep sprinting. */
+    static final int SPRINT_FOOD_LEVEL = 6;
+
+    /**
+     * Whether the client may be sprinting. A vanilla client only sprints with more than 6 food (or
+     * flight allowed) and reports every sprint start to the server, which KYRO refuses while the
+     * player is too hungry. So a hungry player the server sees as not sprinting cannot be
+     * sprinting; the usual "maybe sprinting" allowance would otherwise let an omni/hunger sprint
+     * cheat move 30 % faster. Server-side sprinting (started before food dropped) stays allowed,
+     * and the allowance is held for 600 ms + ping after the last moment sprinting was possible.
+     */
+    static boolean sprintPossible(PlayerData d, MoveContext m, long now) {
+        boolean hungry = m.foodLevel <= SPRINT_FOOD_LEVEL && !m.allowFlight;
+        if (!hungry || m.sprinting) {
+            d.lastSprintPossibleAt = now;
+            return true;
+        }
+        long hold = Math.min(3000L, 600L + (long) Math.max(0, m.ping));
+        return d.lastSprintPossibleAt != 0L && now - d.lastSprintPossibleAt <= hold;
+    }
+
+    /** Sneaking input multiplier: the sneaking_speed attribute, vanilla default 0.3. */
+    static double sneakSpeed(MoveContext m) {
+        double v = m.sneakingSpeedAttr;
+        return Double.isFinite(v) ? Math.max(0.0, Math.min(1.0, v)) : 0.3;
+    }
+
     double speedAttribute(PlayerData d, MoveContext m, long now) {
+        return this.speedAttribute(d, m, now, true);
+    }
+
+    double speedAttribute(PlayerData d, MoveContext m, long now, boolean sprintPossible) {
         double attr = m.movementSpeedAttr;
         if (!Double.isFinite(attr) || attr <= 0.0) {
             attr = 0.1 * Math.max(0.0, (double) m.walkSpeed) / 0.2;
@@ -582,20 +646,25 @@ public final class PredictionChecks {
             }
         }
 
-        if (!m.sprinting) {
+        if (!m.sprinting && sprintPossible) {
+            // Sprint state can lag one move behind the input; allow sprint speed when possible.
             attr *= 1.3;
         }
 
         long hold = Math.min(3000L, 600L + (long) Math.max(0, m.ping));
+        // Hold the highest recent value for 600 ms + ping after the LAST drop: the client applies
+        // a lowered speed only after its ping, and several drops can follow each other (Speed
+        // ending, sprint stopping, hunger) - each one needs its own hold.
         if (Double.isNaN(d.predAttrPeak) || attr >= d.predAttrPeak) {
             d.predAttrPeak = attr;
             d.predAttrPeakAt = 0L;
-        } else if (d.predAttrPeakAt == 0L) {
+        } else if (d.predAttrPeakAt == 0L || attr < d.predAttrLast - 1.0E-9) {
             d.predAttrPeakAt = now;
         } else if (now - d.predAttrPeakAt > hold) {
             d.predAttrPeak = attr;
             d.predAttrPeakAt = 0L;
         }
+        d.predAttrLast = attr;
 
         return Math.max(attr, d.predAttrPeak);
     }

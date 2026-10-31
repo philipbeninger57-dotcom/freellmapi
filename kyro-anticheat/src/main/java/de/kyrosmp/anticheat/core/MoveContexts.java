@@ -53,6 +53,8 @@ public final class MoveContexts {
                 .itemUse(usingItem(p), itemUseTicks(p), itemUseRemaining(p), ItemUseSpeed.of(p))
                 .lungeWeapon(lungeWeapon(p))
                 .sneaking(sneaking(p))
+                .sneakingSpeedAttr(AttributeSet.value(p, attrs.sneakingSpeed()))
+                .foodLevel(p.getFoodLevel())
                 .geometry(new WorldGeometry(w, p, from, to))
                 .build();
     }

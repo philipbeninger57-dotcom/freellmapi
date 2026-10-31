@@ -1,4 +1,4 @@
-# KYRO AntiCheat 3.7.2 for Paper and Folia 1.21.11
+# KYRO AntiCheat 3.8.0 for Paper and Folia 1.21.11
 # Event-based prediction rejects moves beyond its physical bounds; this is not a complete client simulation.
 # Defaults are the cautious ones: alert-only Timer, correction-only hover, protect-setbacks off.
 # Strict mode: checks.timer.prevent: true and prevention.protect-setbacks: true.
@@ -76,9 +76,17 @@ checks:
     enabled: true
     buffer: {flag-at: 2.0}
   # NoSlow A (3.7): walking at full speed while eating, drinking, blocking or drawing a bow.
+  # NoSlow B (3.8): walking at full speed while sneaking (sneaking_speed attribute, Swift Sneak included).
   noslow:
     enabled: true
     buffer: {flag-at: 4.0}
+  # Timer A (3.8): pauses only grant credit for the time really lost (max. 1 s, 10 s when the server itself
+  # stalled), so lag-switch style pauses no longer open a free window. Also judged during knockback/elytra grace.
+  # Sprint A (3.8): sprint start with 6 or fewer food points (impossible in vanilla). The start is refused and
+  # Speed B no longer grants sprint speed to hungry players, which closes hunger/omni-sprint bypasses.
+  sprint:
+    enabled: true
+    buffer: {flag-at: 2.0}
   timer:
     enabled: true
     max-balance-ms: 350
@@ -113,6 +121,11 @@ checks:
     wall:
       enabled: true
       buffer: {flag-at: 4.0}
+    # KillAura D (3.8): attacks without the arm swing every vanilla client sends. Uses cancel-hit above.
+    # Disable if another plugin makes players attack through the API (Player#attack) without a swing.
+    noswing:
+      enabled: true
+      buffer: {flag-at: 3.0}
   # Criticals A: critical hits while resting on a block without a real jump or fall; prevention is configurable.
   criticals:
     enabled: true

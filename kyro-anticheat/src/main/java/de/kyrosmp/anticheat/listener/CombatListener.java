@@ -4,6 +4,7 @@ import de.kyrosmp.anticheat.checks.action.InventoryMoveCheck;
 import de.kyrosmp.anticheat.checks.combat.AutoClickerCheck;
 import de.kyrosmp.anticheat.checks.combat.CombatChecks;
 import de.kyrosmp.anticheat.checks.combat.CriticalsCheck;
+import de.kyrosmp.anticheat.checks.combat.NoSwingCheck;
 import de.kyrosmp.anticheat.core.BedrockDetector;
 import de.kyrosmp.anticheat.core.CheckConfig;
 import de.kyrosmp.anticheat.core.PlayerData;
@@ -84,6 +85,10 @@ public final class CombatListener implements Listener {
                         e.setCancelled(true);
                     }
 
+                    if (c.noSwing() != null && c.noSwing().onAttack(p, d)) {
+                        e.setCancelled(true);
+                    }
+
                     if (!e.isCancelled()
                             && c.autoClicker() != null
                             && c.autoClicker().shouldCancelHit(d, now)) {
@@ -129,6 +134,15 @@ public final class CombatListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onDrop(PlayerDropItemEvent e) {
         this.store.get(e.getPlayer()).lastDrop = System.currentTimeMillis();
+    }
+
+    /** Counts every swing packet (also ones other plugins cancel) for KillAura D. */
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onAnySwing(PlayerAnimationEvent e) {
+        PlayerAnimationType type = e.getAnimationType();
+        if (type == PlayerAnimationType.ARM_SWING || type == PlayerAnimationType.OFF_ARM_SWING) {
+            NoSwingCheck.onSwing(this.store.getQuiet(e.getPlayer()));
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -183,12 +197,21 @@ public final class CombatListener implements Listener {
             CombatChecks combat,
             AutoClickerCheck autoClicker,
             InventoryMoveCheck inventoryMove,
-            CriticalsCheck criticals) {
+            CriticalsCheck criticals,
+            NoSwingCheck noSwing) {
+        public Checks(
+                CombatChecks combat,
+                AutoClickerCheck autoClicker,
+                InventoryMoveCheck inventoryMove,
+                CriticalsCheck criticals) {
+            this(combat, autoClicker, inventoryMove, criticals, null);
+        }
+
         public Checks(
                 CombatChecks combat,
                 AutoClickerCheck autoClicker,
                 InventoryMoveCheck inventoryMove) {
-            this(combat, autoClicker, inventoryMove, null);
+            this(combat, autoClicker, inventoryMove, null, null);
         }
     }
 }

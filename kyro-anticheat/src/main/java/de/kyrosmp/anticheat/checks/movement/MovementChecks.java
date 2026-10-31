@@ -418,46 +418,84 @@ public final class MovementChecks {
         }
     }
 
+    /**
+     * Timer A: movement-event balance. Runs for every on-foot move, also during movement exemptions
+     * (knockback, elytra, teleport grace), because those change the physics of a move but not how
+     * many moves a vanilla client sends per second.
+     *
+     * <p>Older versions granted 1.5 s without any limit after every 300 ms gap, which a timer cheat
+     * could trigger on purpose with short pauses. A gap now only grants credit equal to the time
+     * actually lost (bounded, expiring), so the moves sent after a pause can replay that time but
+     * never gain extra.
+     */
     public void checkTimer(Player p, PlayerData d, MoveContext m) {
         CheckConfig c = this.cfg;
         long now = m.now;
         long nanoNow = m.nanoNow;
-        if (!(m.total <= 1.0E-4)) {
-            if (c.timerEnabled() && d.lastMoveNanos != 0L) {
-                double elapsed = (double) (nanoNow - d.lastMoveNanos) / 1000000.0;
-                d.timerBalance = Physics.timerBalance(d.timerBalance, elapsed);
-                if (elapsed > 300.0) {
-                    d.timerGraceUntil = now + 1500L;
-                }
+        if (m.total <= 1.0E-4) {
+            return;
+        }
 
-                if (now < d.timerGraceUntil) {
-                    d.timerBalance = Math.min(d.timerBalance, 0.0);
-                } else if (d.timerBalance > c.timerMaxBalanceMs()) {
-                    boolean block = this.strict.timerPrevent() && this.prevention.movement();
-                    String id =
-                            this.sink.flag(
-                                    p,
-                                    d,
-                                    "Timer A",
-                                    "Movement event rate above the expected 20 ticks per second",
-                                    String.format(
-                                            Locale.US,
-                                            "balance=+%.0fms; limit=%.0fms",
-                                            d.timerBalance,
-                                            c.timerMaxBalanceMs()));
-                    if (block) {
-                        d.preventMove = true;
-                        if (id != null) {
-                            this.sink.action(id, "Move rejected (timer)");
-                        }
-                    } else {
-                        d.timerBalance = 0.0;
-                    }
-                }
+        if (c.timerEnabled() && d.lastMoveNanos != 0L) {
+            double elapsed = (double) (nanoNow - d.lastMoveNanos) / 1_000_000.0;
+            if (elapsed > Physics.TIMER_STALL_GAP_MS) {
+                double cap =
+                        serverStalled(d, nanoNow, elapsed)
+                                ? Physics.TIMER_MAX_SERVER_STALL_CREDIT_MS
+                                : Physics.TIMER_MAX_LAG_CREDIT_MS;
+                double credit = Math.min(elapsed, cap);
+                d.timerBalance = Physics.timerBalance(d.timerBalance, elapsed, credit);
+                d.timerCreditUntil = now + (long) credit + 1000L;
+            } else {
+                double floor =
+                        now < d.timerCreditUntil
+                                ? Math.max(Physics.TIMER_BASE_CREDIT_MS, -d.timerBalance)
+                                : Physics.TIMER_BASE_CREDIT_MS;
+                d.timerBalance = Physics.timerBalance(d.timerBalance, elapsed, floor);
             }
 
-            d.lastMoveNanos = nanoNow;
+            if (d.timerBalance > c.timerMaxBalanceMs()) {
+                boolean block = this.strict.timerPrevent() && this.prevention.movement();
+                String id =
+                        this.sink.flag(
+                                p,
+                                d,
+                                "Timer A",
+                                "Movement event rate above the expected 20 ticks per second",
+                                String.format(
+                                        Locale.US,
+                                        "balance=+%.0fms; limit=%.0fms; elapsed=%.0fms",
+                                        d.timerBalance,
+                                        c.timerMaxBalanceMs(),
+                                        elapsed));
+                if (block) {
+                    d.preventMove = true;
+                    if (id != null) {
+                        this.sink.action(id, "Move rejected (timer)");
+                    }
+                } else {
+                    d.timerBalance = 0.0;
+                }
+            }
         }
+
+        d.lastMoveNanos = nanoNow;
+    }
+
+    /**
+     * True if the player's region did not tick during the gap either (server lag rather than a
+     * client withholding packets). Uses the per-player heartbeat that runs every 5 ticks.
+     */
+    static boolean serverStalled(PlayerData d, long nanoNow, double gapMs) {
+        long beat = d.heartbeatAtNanos;
+        if (beat == 0L) {
+            return false;
+        }
+        double sinceBeatMs = (nanoNow - beat) / 1_000_000.0;
+        if (sinceBeatMs > 750.0) {
+            return true;
+        }
+        return d.heartbeatGapMs > 750L && sinceBeatMs < gapMs;
     }
 
     public void checkNoFall(Player p, PlayerData d, MoveContext m, boolean ground, boolean exempt) {

@@ -8,6 +8,7 @@ import de.kyrosmp.anticheat.checks.movement.ElytraCheck;
 import de.kyrosmp.anticheat.checks.movement.HoverCheck;
 import de.kyrosmp.anticheat.checks.movement.MovementChecks;
 import de.kyrosmp.anticheat.checks.movement.PredictionChecks;
+import de.kyrosmp.anticheat.checks.movement.SprintCheck;
 import de.kyrosmp.anticheat.checks.vehicle.BoatFlyCheck;
 import de.kyrosmp.anticheat.core.AttributeSet;
 import de.kyrosmp.anticheat.core.BedrockDetector;
@@ -19,6 +20,7 @@ import de.kyrosmp.anticheat.core.MoveGeometry;
 import de.kyrosmp.anticheat.core.PlayerData;
 import de.kyrosmp.anticheat.core.PlayerDataStore;
 import de.kyrosmp.anticheat.core.PlayerHistory;
+import de.kyrosmp.anticheat.core.Punisher;
 import de.kyrosmp.anticheat.core.StrictConfig;
 import de.kyrosmp.anticheat.core.TeleportSync;
 import de.kyrosmp.anticheat.debug.DebugManager;
@@ -26,6 +28,7 @@ import de.kyrosmp.anticheat.flag.FlagSink;
 
 import io.papermc.paper.event.player.PlayerFailMoveEvent;
 
+import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.entity.Boat;
 import org.bukkit.entity.Entity;
@@ -37,6 +40,7 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDamageEvent.DamageCause;
+import org.bukkit.event.entity.FoodLevelChangeEvent;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
@@ -44,6 +48,7 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.player.PlayerTeleportEvent.TeleportCause;
+import org.bukkit.event.player.PlayerToggleSprintEvent;
 import org.bukkit.event.player.PlayerVelocityEvent;
 import org.bukkit.event.vehicle.VehicleEnterEvent;
 import org.bukkit.event.vehicle.VehicleExitEvent;
@@ -312,6 +317,7 @@ public final class MovementListener implements Listener {
                 if (m.total < 1.0E-4) {
                     return false;
                 } else {
+                    SprintCheck.noteFood(d, m.foodLevel, m.allowFlight, now);
                     boolean prevGround = d.lastGround;
                     if (!d.positionInitialized) {
                         d.positionInitialized = true;
@@ -369,14 +375,16 @@ public final class MovementListener implements Listener {
                     this.trackExemption(p, d, exemptReason);
                     mc.checkNoFall(p, d, m, landed, exempt);
                     boolean reverted = false;
-                    if (!exempt) {
+                    if (m.insideVehicle) {
+                        // Vehicle movement is sent as vehicle packets, not player moves.
+                        d.lastMoveNanos = 0L;
+                    } else {
                         mc.checkTimer(p, d, m);
                     }
 
                     if (exempt) {
                         if (AIR_GRACE.contains(exemptReason)) {
                             d.speedBuffer = Math.max(0.0, d.speedBuffer - 0.8);
-                            d.timerBalance = Math.min(d.timerBalance, 0.0);
                             mc.checkFlyDuringGrace(p, d, m, landed, exemptReason);
                         } else {
                             d.coolMovementBuffers();
@@ -738,12 +746,50 @@ public final class MovementListener implements Listener {
         return to != null && to.getWorld() != null && !MovementChecks.invalidMovementPacket(to, to);
     }
 
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onToggleSprint(PlayerToggleSprintEvent e) {
+        if (!e.isSprinting()) {
+            return;
+        }
+        Player p = e.getPlayer();
+        PlayerData d = this.store.get(p);
+        Checks c = this.checks.get();
+        GameMode gm = p.getGameMode();
+        if (c.sprint() == null
+                || this.exemptions.bypass(p)
+                || this.bedrockExempt(p, d)
+                || gm == GameMode.CREATIVE
+                || gm == GameMode.SPECTATOR
+                || p.isInsideVehicle()) {
+            return;
+        }
+        long now = this.clock.getAsLong();
+        if (c.sprint()
+                .onSprintStart(
+                        p, d, p.getFoodLevel(), p.getAllowFlight(), Punisher.safePing(p), now)) {
+            e.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onFoodChange(FoodLevelChangeEvent e) {
+        if (e.getEntity() instanceof Player p) {
+            PlayerData d = this.store.peek(p.getUniqueId());
+            if (d != null) {
+                // The client still saw the old value until now.
+                SprintCheck.noteFood(
+                        d, p.getFoodLevel(), p.getAllowFlight(), this.clock.getAsLong());
+            }
+        }
+    }
+
     @EventHandler(priority = EventPriority.MONITOR)
     public void onJoin(PlayerJoinEvent e) {
         Player p = e.getPlayer();
         PlayerData d = this.store.get(p);
         long now;
         d.lastSeen = now = this.clock.getAsLong();
+        d.lastFoodAbove6At = now;
         d.lastTeleport = now;
         d.lastSafe = p.getLocation().clone();
         d.lastSafeAt = now;
@@ -769,14 +815,26 @@ public final class MovementListener implements Listener {
             BlockPlaceChecks place,
             ElytraCheck elytra,
             PredictionChecks prediction,
-            HoverCheck hover) {
+            HoverCheck hover,
+            SprintCheck sprint) {
+        public Checks(
+                MovementChecks movement,
+                BoatFlyCheck boat,
+                VelocityCheck velocity,
+                BlockPlaceChecks place,
+                ElytraCheck elytra,
+                PredictionChecks prediction,
+                HoverCheck hover) {
+            this(movement, boat, velocity, place, elytra, prediction, hover, null);
+        }
+
         public Checks(
                 MovementChecks movement,
                 BoatFlyCheck boat,
                 VelocityCheck velocity,
                 BlockPlaceChecks place,
                 ElytraCheck elytra) {
-            this(movement, boat, velocity, place, elytra, null, null);
+            this(movement, boat, velocity, place, elytra, null, null, null);
         }
     }
 

@@ -69,6 +69,11 @@ class PredictionFuzzTest {
         int attrSwitchAt = -1;
         double attrNext = 0.13;
         boolean ice = false;
+        // Hunger is server-authoritative; the client decides about sprinting with the value it
+        // received one ping ago (vanilla: no sprint start at 6 food or less).
+        int serverFood = 20;
+        int[] foodHistory = new int[64];
+        java.util.Arrays.fill(foodHistory, 20);
         int rejects = 0;
         java.util.ArrayDeque<String> trace = new java.util.ArrayDeque<>();
         for (int t = 0; t < ticks; t++) {
@@ -79,7 +84,19 @@ class PredictionFuzzTest {
                 sim.forward = rnd.nextInt(4) == 0 ? 0.0 : (rnd.nextBoolean() ? 1.0 : -1.0);
             if (rnd.nextInt(25) == 0) sim.strafe = rnd.nextInt(3) - 1;
             if (rnd.nextInt(30) == 0) sim.jump = rnd.nextBoolean();
-            if (rnd.nextInt(40) == 0) sim.sprint = sim.forward > 0 && rnd.nextBoolean();
+            if (rnd.nextInt(120) == 0) {
+                int before = serverFood;
+                serverFood = rnd.nextInt(3) == 0 ? rnd.nextInt(7) : 7 + rnd.nextInt(14);
+                if (before > 6 && serverFood <= 6 && rnd.nextBoolean()) {
+                    sim.sprint = false; // the client may also stop sprinting once it learns
+                }
+            }
+            foodHistory[t % foodHistory.length] = serverFood;
+            int clientFood = foodHistory[Math.max(0, t - pingTicks) % foodHistory.length];
+            if (rnd.nextInt(40) == 0) {
+                boolean want = sim.forward > 0 && rnd.nextBoolean();
+                sim.sprint = want && (sim.sprint || clientFood > 6);
+            }
             if (rnd.nextInt(50) == 0) sim.inputScale = rnd.nextInt(3) == 0 ? 0.3 : 1.0; // sneaking
             if (sim.onGround && rnd.nextInt(150) == 0) {
                 // head hitters: a ceiling 2.0-2.5 blocks above the floor the player stands on
@@ -185,6 +202,9 @@ class PredictionFuzzTest {
                             .from(lx, ly, lz)
                             .to(sim.x, sim.y, sim.z)
                             .sprinting(sim.sprint)
+                            .sneaking(sim.inputScale < 1.0)
+                            .sneakingSpeedAttr(0.3)
+                            .foodLevel(serverFood)
                             .movementSpeedAttr(attrServer * sprintFactor)
                             .jumpAmplifier(jumpAmp)
                             .gravityAttr(sim.gravity)

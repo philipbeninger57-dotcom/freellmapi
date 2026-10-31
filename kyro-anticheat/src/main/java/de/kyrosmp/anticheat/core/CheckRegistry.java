@@ -45,9 +45,12 @@ public final class CheckRegistry {
                         "movement-horizontal",
                         "checks.timer",
                         "Movement-event balance: every position event costs 50 ms, elapsed time is"
-                                + " credited; 1.5 s grace after lag. Alert-only by default; with"
-                                + " checks.timer.prevent: true the surplus moves are rejected (no"
-                                + " ground setback) until real time pays the debt back.",
+                                + " credited. A pause only grants credit for the time really lost"
+                                + " (max. 1 s, 10 s if the server itself stalled) and it expires,"
+                                + " so pausing on purpose gains nothing. Also judged during"
+                                + " knockback, elytra and teleport grace. Alert-only by default;"
+                                + " with checks.timer.prevent: true the surplus moves are rejected"
+                                + " (no ground setback) until real time pays the debt back.",
                         "Only counts position changes that fire PlayerMoveEvent, not every packet;"
                                 + " event-rate evidence is approximate."));
         r.register(
@@ -337,6 +340,40 @@ public final class CheckRegistry {
                         "Tolerance covers the last movement (the crosshair is cast from the"
                                 + " interpolated camera); non-full faces use their most lenient"
                                 + " plane."));
+        r.register(
+                new CheckInfo(
+                        "NoSlow B",
+                        CheckCategory.MOVEMENT,
+                        "movement-horizontal",
+                        "checks.noslow",
+                        "Walking on the ground at normal speed while sneaking (vanilla scales the"
+                                + " input by the sneaking_speed attribute: 0.3, more with Swift"
+                                + " Sneak). Uses the same momentum prediction as Speed B.",
+                        "Judged only on pure ground movement with sneaking reported for two moves"
+                                + " in a row; entity pushing and knockback are allowed for."));
+        r.register(
+                new CheckInfo(
+                        "Sprint A",
+                        CheckCategory.MOVEMENT,
+                        "movement-horizontal",
+                        "checks.sprint",
+                        "Sprint start with 6 or fewer food points (impossible for a vanilla"
+                                + " client). The start is refused and Speed B stops granting sprint"
+                                + " speed to hungry players that are not sprinting server-side.",
+                        "Starts within ping + 300 ms of the food level dropping are not judged;"
+                                + " flight-allowed, creative and vehicle players are excluded."));
+        r.register(
+                new CheckInfo(
+                        "KillAura D",
+                        CheckCategory.COMBAT,
+                        "combat-aura",
+                        "checks.killaura.noswing",
+                        "Melee attack without the arm swing a vanilla client sends right after"
+                                + " every attack (checked 5 ticks later). While the buffer is high,"
+                                + " further hits are cancelled (uses checks.killaura.cancel-hit).",
+                        "Spear attacks are skipped. Plugins that make players attack via the API"
+                                + " (Player#attack) without a swing can trigger it; disable"
+                                + " checks.killaura.noswing in that case."));
         return r;
     }
 

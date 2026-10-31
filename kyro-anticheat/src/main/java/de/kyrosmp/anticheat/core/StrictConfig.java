@@ -29,9 +29,14 @@ public record StrictConfig(
         boolean protectSetbacks,
         boolean groundFallback,
         boolean timerPrevent,
-        long inventoryOpenGraceMs) {
+        long inventoryOpenGraceMs,
+        boolean sprintEnabled,
+        double sprintFlagAt,
+        boolean noSwingEnabled,
+        double noSwingFlagAt) {
     public static final long DEFAULT_INVENTORY_OPEN_GRACE_MS = 25L;
 
+    /** 3.7.0 field set; switches added later use their defaults. */
     public StrictConfig(
             boolean flyPredictionEnabled,
             double flyPredictionTolerance,
@@ -85,13 +90,18 @@ public record StrictConfig(
                 protectSetbacks,
                 groundFallback,
                 false,
-                25L);
+                DEFAULT_INVENTORY_OPEN_GRACE_MS,
+                true,
+                2.0,
+                true,
+                3.0);
     }
 
     public static StrictConfig defaults() {
         return new StrictConfig(
                 true, 0.03, 3.0, true, 1200L, true, 2.0, true, 0.04, 4.0, true, 4.0, true, 25, 3.0,
-                true, 3.0, true, 3.0, true, true, true, true, false, true, false, 25L);
+                true, 3.0, true, 3.0, true, true, true, true, false, true, false, 25L, true, 2.0,
+                true, 3.0);
     }
 
     public static StrictConfig from(ConfigurationSection c) {
@@ -159,7 +169,14 @@ public record StrictConfig(
                                                 "checks.inventorymove.open-grace-ms",
                                                 d.inventoryOpenGraceMs),
                                 0.0,
-                                1000.0));
+                                1000.0),
+                c.getBoolean("checks.sprint.enabled", d.sprintEnabled),
+                clamp(c.getDouble("checks.sprint.buffer.flag-at", d.sprintFlagAt), 1.0, 100.0),
+                c.getBoolean("checks.killaura.noswing.enabled", d.noSwingEnabled),
+                clamp(
+                        c.getDouble("checks.killaura.noswing.buffer.flag-at", d.noSwingFlagAt),
+                        1.0,
+                        100.0));
     }
 
     private static double clamp(double v, double min, double max) {

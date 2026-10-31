@@ -7,11 +7,13 @@ import de.kyrosmp.anticheat.checks.action.XRayCheck;
 import de.kyrosmp.anticheat.checks.combat.AutoClickerCheck;
 import de.kyrosmp.anticheat.checks.combat.CombatChecks;
 import de.kyrosmp.anticheat.checks.combat.CriticalsCheck;
+import de.kyrosmp.anticheat.checks.combat.NoSwingCheck;
 import de.kyrosmp.anticheat.checks.combat.VelocityCheck;
 import de.kyrosmp.anticheat.checks.movement.ElytraCheck;
 import de.kyrosmp.anticheat.checks.movement.HoverCheck;
 import de.kyrosmp.anticheat.checks.movement.MovementChecks;
 import de.kyrosmp.anticheat.checks.movement.PredictionChecks;
+import de.kyrosmp.anticheat.checks.movement.SprintCheck;
 import de.kyrosmp.anticheat.checks.vehicle.BoatFlyCheck;
 import de.kyrosmp.anticheat.command.KyroCommand;
 import de.kyrosmp.anticheat.command.SusCommand;
@@ -230,6 +232,10 @@ public final class KyroAntiCheat extends JavaPlugin {
                                 if (!p.isOnline()) {
                                     task.cancel();
                                 } else {
+                                    PlayerData beat = this.data.peek(p.getUniqueId());
+                                    if (beat != null) {
+                                        beat.heartbeat(System.nanoTime());
+                                    }
                                     MovementListener.Checks checks = this.moveChecks;
                                     HoverCheck hover = checks == null ? null : checks.hover();
                                     if (hover != null && !this.exemptions.bypass(p)) {
@@ -300,7 +306,8 @@ public final class KyroAntiCheat extends JavaPlugin {
                         new PredictionChecks(this.flags, this.punisher, cc, sc)
                                 .withPrevention(prevention),
                         new HoverCheck(this.flags, this.punisher, cc, sc)
-                                .withPrevention(prevention));
+                                .withPrevention(prevention),
+                        new SprintCheck(this.flags, sc, prevention));
         this.combatChecks =
                 new CombatListener.Checks(
                         new CombatChecks(this.flags, cc, this.attributes)
@@ -308,7 +315,8 @@ public final class KyroAntiCheat extends JavaPlugin {
                                 .withStrict(sc),
                         new AutoClickerCheck(this.flags, cc).withPolicy(sc, prevention),
                         new InventoryMoveCheck(this.flags, cc).withStrict(sc),
-                        new CriticalsCheck(this.flags, cc));
+                        new CriticalsCheck(this.flags, cc),
+                        new NoSwingCheck(this, this.flags, cc, sc, prevention));
         this.xrayCheck = new XRayCheck(this.flags, cc);
         this.digChecks = new BlockBreakChecks(this.flags, sc).withPrevention(prevention);
     }

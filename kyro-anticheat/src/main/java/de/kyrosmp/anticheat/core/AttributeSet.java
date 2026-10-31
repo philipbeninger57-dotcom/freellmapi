@@ -14,9 +14,10 @@ public record AttributeSet(
         Attribute fallDamageMultiplier,
         Attribute stepHeight,
         Attribute entityInteractionRange,
-        Attribute blockInteractionRange) {
+        Attribute blockInteractionRange,
+        Attribute sneakingSpeed) {
     public static final AttributeSet NONE =
-            new AttributeSet(null, null, null, null, null, null, null, null);
+            new AttributeSet(null, null, null, null, null, null, null, null, null);
 
     public static AttributeSet resolve() {
         return new AttributeSet(
@@ -27,7 +28,8 @@ public record AttributeSet(
                 attribute("fall_damage_multiplier", "generic.fall_damage_multiplier"),
                 attribute("step_height", "generic.step_height"),
                 attribute("entity_interaction_range", "player.entity_interaction_range"),
-                attribute("block_interaction_range", "player.block_interaction_range"));
+                attribute("block_interaction_range", "player.block_interaction_range"),
+                attribute("sneaking_speed", "player.sneaking_speed"));
     }
 
     private static Attribute attribute(String... keys) {

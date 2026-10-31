@@ -63,13 +63,37 @@ public final class Physics {
         return v < min ? min : Math.min(v, max);
     }
 
+    /** Real time each movement event is expected to cost (one client tick). */
+    public static final double TICK_MS = 50.0;
+
+    /** Credit a player may bank by moving slower than 20 events per second. */
+    public static final double TIMER_BASE_CREDIT_MS = 400.0;
+
+    /** An event gap longer than this is treated as a network or server stall. */
+    public static final double TIMER_STALL_GAP_MS = 300.0;
+
+    /** Most credit one client-side stall can grant: a burst may only replay time really lost. */
+    public static final double TIMER_MAX_LAG_CREDIT_MS = 1000.0;
+
+    /** Most credit when the server/region itself stalled (all queued packets arrive at once). */
+    public static final double TIMER_MAX_SERVER_STALL_CREDIT_MS = 10000.0;
+
+    /**
+     * Timer balance after one movement event. Every event costs {@link #TICK_MS}, elapsed real time
+     * is credited, and credit is bounded by {@code floorMs} so that a pause can only be spent once
+     * and never turns into a free window for a faster game clock.
+     */
+    /** Balance after a regular event (no stall): credit bounded by {@link #TIMER_BASE_CREDIT_MS}. */
     public static double timerBalance(double balance, double elapsedMs) {
-        return Double.isFinite(balance)
-                        && Double.isFinite(elapsedMs)
-                        && !(elapsedMs < 0.0)
-                        && !(elapsedMs > 1000.0)
-                ? Math.max(-400.0, balance + 50.0 - elapsedMs)
-                : 0.0;
+        return timerBalance(balance, elapsedMs, TIMER_BASE_CREDIT_MS);
+    }
+
+    public static double timerBalance(double balance, double elapsedMs, double floorMs) {
+        if (!Double.isFinite(balance) || !Double.isFinite(elapsedMs) || elapsedMs < 0.0) {
+            return 0.0;
+        }
+        double floor = Double.isFinite(floorMs) ? Math.max(0.0, floorMs) : TIMER_BASE_CREDIT_MS;
+        return Math.max(-floor, balance + TICK_MS - elapsedMs);
     }
 
     public static String suspicionLabel(int flags) {

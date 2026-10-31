@@ -94,7 +94,10 @@ public final class ConfigValidator {
                     new ConfigValidator.NumberRule("checks.nuker.buffer.flag-at", 1.0, 100.0),
                     new ConfigValidator.NumberRule("checks.ghosthand.buffer.flag-at", 1.0, 100.0),
                     new ConfigValidator.NumberRule(
-                            "checks.scaffold.face.buffer.flag-at", 1.0, 100.0));
+                            "checks.scaffold.face.buffer.flag-at", 1.0, 100.0),
+                    new ConfigValidator.NumberRule("checks.sprint.buffer.flag-at", 1.0, 100.0),
+                    new ConfigValidator.NumberRule(
+                            "checks.killaura.noswing.buffer.flag-at", 1.0, 100.0));
     private static final List<String> BOOLEANS =
             List.of(
                     "bedrock.exempt",
@@ -142,7 +145,9 @@ public final class ConfigValidator {
                     "checks.inventorymove.cancel-clicks",
                     "prevention.protect-setbacks",
                     "prevention.ground-fallback",
-                    "checks.timer.prevent");
+                    "checks.timer.prevent",
+                    "checks.sprint.enabled",
+                    "checks.killaura.noswing.enabled");
     public static final List<String> OBSOLETE =
             List.of(
                     "checks.fly.buffer.decay",
