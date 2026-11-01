@@ -1,3 +1,56 @@
+# Testbericht — KYRO AntiCheat 3.8.0
+
+Prüfdatum: 01.11.2026. Grundlage: Quellcode 3.7.2 (Bytecode-identisch mit dem 3.7.2-Release-JAR).
+
+**Ausgeführt: 215 Tests, 0 fehlgeschlagen, 0 Fehler, 0 übersprungen. `mvn clean package`: BUILD SUCCESS.**
+Davon 193 bestehende Tests unverändert übernommen und 22 neue Tests.
+
+Umgebung: Linux, OpenJDK 21.0.12.1, Maven 3.9.11, Paper-API 1.21.11 (aus dem offiziellen PaperMC-Quellcode
+kompiliert, Branch `ver/1.21.11`, weil `repo.papermc.io` aus der Build-Umgebung gesperrt war).
+
+## Fehlalarm-Test gegen Vanilla-Physik
+
+`PredictionFuzzTest` mit `-Dfuzz.seeds=90000`: **90.000 Spielverläufe mit je 2.000 Ticks, zusammen
+180 Millionen Ticks legitimer Bewegung, 0 Ablehnungen** (650 s).
+
+Neu gegenüber 3.7.2: Die Simulation meldet dem Server jetzt auch Schleichen (`sneaking_speed` 0,3) und
+den Hunger. Der Hunger erreicht den Client mit Ping-Verzögerung, und ein Sprint-Start ist nur möglich,
+wenn der Client mehr als 6 Hunger sieht. Damit werden NoSlow B und die hungerabhängige
+Sprint-Prediction mit geprüft.
+
+Kontrolle: Mit absichtlich falsch gemeldetem Schleichfaktor (0,1 statt 0,3) lehnt NoSlow B legitime
+Verläufe ab. Die neue Regel wird also tatsächlich ausgeübt.
+
+Der erweiterte Fuzz-Test hat drei Probleme gefunden, die vor dem Release behoben wurden:
+
+| Fund | Ursache | Behebung |
+|---|---|---|
+| Speed B nach zwei Tempo-Senkungen kurz hintereinander (5 Verläufe) | Der Attribut-Hold startete bei der zweiten Senkung nicht neu. Der pauschale Sprint-Puffer hatte das bisher verdeckt. | Jede Senkung bekommt eigene 600 ms + Ping |
+| NoSlow B nach Landung mit Knockback beim Schleichen (1 Verlauf) | Ein tolerierter Move wurde mit der Schleich-Grenze statt mit dem beobachteten Tempo fortgeschrieben | Beobachtetes Tempo übernehmen, begrenzt durch die normale Grenze |
+| Speed B bei Sprung im selben Tick wie ein Kantenabsturz (1 Verlauf) | Harness-Fehler: „kam vom Boden" wurde mit der bereits abgesenkten Bodenhöhe berechnet | Harness nutzt die Bodenhöhe am Start des Moves, wie `WorldGeometry` auf dem Server |
+
+## Neue Tests (Auswahl)
+
+| Szenario | Ergebnis |
+|---|---|
+| Timer: 5× (320 ms Pause + 40 Moves mit doppeltem Tempo), in 3.7.2 nie erkannt | Timer A geflaggt |
+| Timer: 1 s Netzwerk-Lag, danach 19 nachgeholte Moves | kein Flag |
+| Timer: 3 s Server-Stillstand, danach 59 nachgeholte Moves | kein Flag |
+| Timer: 3 s Client-Pause bei laufendem Server, danach 60 Moves auf einmal | Timer A geflaggt |
+| Schleichen mit Gehtempo (0,215 Blöcke/Tick) | NoSlow B geflaggt, Moves abgelehnt |
+| Schleichen mit Schleichtempo; Swift Sneak III mit Gehtempo | kein Flag |
+| Sprinttempo bei Hunger 4, Server sieht kein Sprinten (in 3.7.2 erlaubt) | Speed B, Moves abgelehnt |
+| Sprinten bei Hunger 4, Sprint vor dem Hungerabfall begonnen | kein Flag |
+| Sprint-Start bei Hunger 6 | abgelehnt, Sprint A |
+| Sprint-Start innerhalb von Ping + 300 ms nach Hungerabfall | nicht beurteilt |
+| 3 Angriffe ohne Arm-Schwung | KillAura D |
+| 50 Angriffe mit Schwung; jeder 10. ohne Schwung | kein Flag |
+
+Kein Live-Test auf einem echten Server mit echten Clients; vor dem Produktiveinsatz auf einem
+Testserver mit den eigenen Plugins prüfen.
+
+---
+
 # Testbericht — KYRO AntiCheat 3.7.2
 
 Prüfdatum: 31.10.2026. Zusammengeführter Build aus 3.7.0 und 3.7.1-custom.
