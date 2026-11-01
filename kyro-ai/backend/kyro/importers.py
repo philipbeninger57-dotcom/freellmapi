@@ -85,24 +85,33 @@ def _chatgpt_part(p: Any) -> str:
     return str(p)
 
 
-def parse_claude_conversations(data: list[dict]) -> list[dict]:
+def parse_claude_conversations(data: list[dict] | dict) -> list[dict]:
+    if isinstance(data, dict):
+        data = [data]
     convs = []
     for conv in data:
+        if not isinstance(conv, dict):
+            continue
         msgs = []
-        for m in conv.get("chat_messages") or []:
-            role = {"human": "user", "user": "user", "assistant": "assistant"}.get(m.get("sender"))
+        for m in conv.get("chat_messages") or conv.get("messages") or []:
+            if not isinstance(m, dict):
+                continue
+            role = {"human": "user", "user": "user", "assistant": "assistant"}.get(m.get("sender") or m.get("role"))
             if not role:
                 continue
             text = m.get("text") or ""
-            if not text and m.get("content"):
-                text = "\n".join(b.get("text", "") for b in m["content"] if isinstance(b, dict) and b.get("type") == "text")
+            content = m.get("content")
+            if not text and isinstance(content, str):
+                text = content
+            elif not text and isinstance(content, list):
+                text = "\n".join(b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text")
             for a in m.get("attachments") or []:
                 if a.get("extracted_content"):
                     text += f"\n\n[Attachment: {a.get('file_name', 'file')}]\n{a['extracted_content'][:20000]}"
             if text.strip():
                 msgs.append({"role": role, "content": text.strip(), "time": parse_time(m.get("created_at"))})
         if msgs:
-            convs.append({"id": str(conv.get("uuid") or new_id()), "title": conv.get("name") or "Untitled",
+            convs.append({"id": str(conv.get("uuid") or conv.get("id") or new_id()), "title": conv.get("name") or conv.get("title") or "Untitled",
                           "created": parse_time(conv.get("created_at")), "updated": parse_time(conv.get("updated_at")),
                           "messages": msgs})
     return convs
@@ -144,12 +153,37 @@ def parse_memory_list(obj: Any) -> list[dict]:
     return items
 
 
+def load_json_or_jsonl(text: str) -> Any:
+    """Parse a JSON document, or JSON Lines (one object per line) into a list."""
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        items = []
+        for line in text.splitlines():
+            if line.strip():
+                try:
+                    items.append(json.loads(line))
+                except json.JSONDecodeError as e:
+                    raise ValueError(str(e)) from e
+        if not items:
+            raise ValueError("empty file")
+        return items
+
+
+def _is_message_list(v: Any) -> bool:
+    return isinstance(v, list) and bool(v) and isinstance(v[0], dict) and bool({"sender", "role"} & set(v[0]))
+
+
 def detect_json_kind(name: str, obj: Any) -> str:
     n = Path(name).name.lower()
+    if isinstance(obj, dict) and isinstance(obj.get("data_files"), list) and any("export_url" in f for f in obj["data_files"] if isinstance(f, dict)):
+        return "export_manifest"
+    if isinstance(obj, dict) and ("chat_messages" in obj or "mapping" in obj or _is_message_list(obj.get("messages"))):
+        obj = [obj]  # a single conversation per file
     if isinstance(obj, list) and obj and isinstance(obj[0], dict):
         if "mapping" in obj[0]:
             return "chatgpt_conversations"
-        if "chat_messages" in obj[0]:
+        if "chat_messages" in obj[0] or _is_message_list(obj[0].get("messages")):
             return "claude_conversations"
         if "prompt_template" in obj[0] or ("docs" in obj[0] and "uuid" in obj[0]):
             return "claude_projects"
@@ -187,10 +221,10 @@ class Importer:
                 await self._import_project_zip(path, filename, project_id, stats)
             elif lower.endswith(".zip"):
                 await self._import_zip(path, stats, project_id, use_llm, progress)
-            elif lower.endswith(".json"):
+            elif lower.endswith((".json", ".jsonl", ".ndjson")):
                 if path.stat().st_size > MAX_JSON_BYTES:
                     raise ValueError("JSON file too large")
-                obj = json.loads(path.read_text("utf-8", errors="replace"))
+                obj = load_json_or_jsonl(path.read_text("utf-8", errors="replace"))
                 await self._import_json(filename, obj, stats, project_id, use_llm, progress, hint)
             else:
                 text = _read_text_any(path, filename)
@@ -220,27 +254,45 @@ class Importer:
         return {"import_id": iid, **stats}
 
     async def _import_zip(self, path: Path, stats: dict, project_id, use_llm, progress) -> None:
+        """Import every recognisable data file in an export ZIP, whatever it is called (exports are
+        sometimes split into conversations-000.zip, sharded JSON or JSON Lines files)."""
         with zipfile.ZipFile(path) as z:
             infos = [i for i in z.infolist() if not i.is_dir()]
             if sum(i.file_size for i in infos) > 4_000_000_000:
                 raise ValueError("ZIP expands to more than 4 GB; refusing (zip-bomb protection)")
-            names = {Path(i.filename).name.lower(): i for i in infos}
-            order = ["projects.json", "conversations.json"] + [n for n in names if "memor" in n and n.endswith((".json", ".txt", ".md"))]
-            handled = set()
-            for n in order:
-                if n in names and n not in handled:
-                    handled.add(n)
-                    raw = z.read(names[n])
-                    stats["files"].append(names[n].filename)
-                    if n.endswith(".json"):
-                        await self._import_json(n, json.loads(raw.decode("utf-8", errors="replace")), stats, project_id, use_llm, progress, "auto")
-                    else:
-                        await self._import_memories(parse_memory_list(raw.decode("utf-8", errors="replace")), "claude-memory", n, stats, project_id)
+
+            def prio(i: zipfile.ZipInfo) -> int:  # projects before conversations so chats can be linked
+                n = Path(i.filename).name.lower()
+                return 0 if "project" in n else 2 if "memor" in n else 1
+
+            handled = 0
+            data_files = [i for i in infos if i.filename.lower().endswith((".json", ".jsonl", ".ndjson"))]
+            for info in sorted(data_files, key=prio):
+                name = Path(info.filename).name
+                try:
+                    obj = load_json_or_jsonl(z.read(info).decode("utf-8", errors="replace"))
+                except ValueError:
+                    stats["skipped"].append(f"{info.filename}: not valid JSON")
+                    continue
+                kind = detect_json_kind(name, obj)
+                if kind == "unknown":
+                    continue  # metadata or UI files in the export; nothing to learn from them
+                stats["files"].append(info.filename)
+                await self._import_json(name, obj, stats, project_id, use_llm, progress, "auto")
+                handled += 1
+            for info in infos:
+                n = Path(info.filename).name.lower()
+                if "memor" in n and n.endswith((".txt", ".md")):
+                    stats["files"].append(info.filename)
+                    await self._import_memories(parse_memory_list(z.read(info).decode("utf-8", errors="replace")),
+                                                "claude-memory", n, stats, project_id)
+                    handled += 1
             if not handled:
                 notes = [i for i in infos if i.filename.lower().endswith((".md", ".txt"))]
                 if not notes:
-                    raise ValueError("ZIP contains no conversations.json, projects.json, memory files or notes. "
-                                     "For a code project, use 'Import project'.")
+                    raise ValueError("This ZIP contains no conversations, projects, memories or notes. If your export "
+                                     "came as several ZIPs, upload the one named like 'conversations-000.zip'. "
+                                     "For a code project, use 'Programming project'.")
                 for i in notes[:5000]:
                     await self._import_note(z.read(i).decode("utf-8", errors="replace"), i.filename, stats, project_id)
 
@@ -250,6 +302,11 @@ class Importer:
             stats["memories_created"] += r["created"]; stats["duplicates"] += r["duplicate"]; stats["conflicts"] += r["conflict"]
             return
         kind = detect_json_kind(name, obj) if hint in ("auto", "chatgpt", "claude") else hint
+        if kind == "export_manifest":
+            files = ", ".join(f.get("filename", "?") for f in obj["data_files"])
+            raise ValueError("This is only the export manifest (a list of download links), not your data. Open each "
+                             f"link in the browser where you are logged in, download the ZIPs ({files}) and upload "
+                             "the conversations ZIP here.")
         if kind == "chatgpt_conversations":
             await self._import_conversations(parse_chatgpt_conversations(obj), "chatgpt", stats, project_id, use_llm, progress)
         elif kind == "claude_conversations":

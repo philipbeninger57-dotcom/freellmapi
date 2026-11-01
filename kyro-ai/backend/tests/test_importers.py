@@ -107,3 +107,43 @@ async def test_full_import_zip_dedup_and_conflicts(settings, tmp_path):
     assert r3["conversations"] == 1
     hits = await S.memory.search("Which Folia version does my server run?")
     assert any("1.21.11" in h["content"] for h in hits)
+
+
+@pytest.mark.asyncio
+async def test_split_export_zip_any_filenames(settings, tmp_path):
+    """Newer exports split data into conversations-000.zip with arbitrarily named / sharded files."""
+    from kyro.main import Services
+
+    S = Services(settings)
+    single = dict(CLAUDE[0], uuid="u-single", name="Single file conv")
+    variant = {"id": "v-1", "title": "Messages variant", "created_at": "2025-01-01T00:00:00Z",
+               "messages": [{"role": "user", "content": "I prefer Gradle for KYRO Client builds."},
+                            {"role": "assistant", "content": "Okay."}]}
+    z = tmp_path / "conversations-000.zip"
+    with zipfile.ZipFile(z, "w") as f:
+        f.writestr("data/conversations-000.json", json.dumps(CLAUDE))
+        f.writestr("data/conv/u-single.json", json.dumps(single))
+        f.writestr("data/shard.jsonl", json.dumps(variant) + "\n")
+        f.writestr("metadata.json", json.dumps({"account": {"id": "x"}}))  # ignored, not an error
+    r = await S.importer.import_file(z, "conversations-000.zip")
+    assert r["conversations"] == 3
+    titles = {c["title"] for c in S.db.all("SELECT title FROM conversations WHERE source='claude'")}
+    assert titles == {"Anticheat", "Single file conv", "Messages variant"}
+    assert any("Gradle" in m["content"] for m in S.memory.list(source="claude")["items"])
+
+
+@pytest.mark.asyncio
+async def test_metadata_only_zip_and_manifest_give_helpful_errors(settings, tmp_path):
+    from kyro.main import Services
+
+    S = Services(settings)
+    meta = tmp_path / "light_metadata-000.zip"
+    with zipfile.ZipFile(meta, "w") as f:
+        f.writestr("light_metadata.json", json.dumps([{"uuid": "a", "size": 3}]))
+    with pytest.raises(ValueError, match="conversations-000.zip"):
+        await S.importer.import_file(meta, "light_metadata-000.zip")
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"version": "1.0", "total_files": 1, "data_files": [
+        {"export_url": "https://example.invalid/download/x", "category": "conversations", "filename": "conversations-000.zip"}]}))
+    with pytest.raises(ValueError, match="only the export manifest"):
+        await S.importer.import_file(manifest, "manifest.json")

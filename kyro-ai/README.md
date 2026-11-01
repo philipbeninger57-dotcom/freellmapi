@@ -138,8 +138,8 @@ scripts\windows\test.ps1        # or: cd backend && pytest -q ; cd frontend && n
 
 What was verified while building (Linux CI container):
 
-- **Backend: 31 pytest tests pass; 4 more are skipped because they need real models (see below).** They cover the importers (ChatGPT branch walking, Claude parsing,
-  memory-list shapes, ZIP import, re-import dedup), memory (dedup with source merge, conflict flagging and
+- **Backend: 33 pytest tests pass; 4 more are skipped because they need real models (see below).** They cover the importers (ChatGPT branch walking, Claude parsing,
+  memory-list shapes, ZIP import, split exports with sharded or JSONL files, re-import dedup), memory (dedup with source merge, conflict flagging and
   resolution, scope separation, edit, export, delete), sandbox (path and symlink escape, command policy, zip-slip,
   JAR inspection, project scan), agent mechanics (write → failing test → DEBUG → fix → passing test = *verified*;
   editing after a test = not verified; approvals; blocked commands), the chat pipeline (SSE, RAG injection, project
