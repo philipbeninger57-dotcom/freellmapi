@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import { timeAgo, useApp } from "../lib/store";
 
 const FILE_KINDS = [
+  { id: "archive", label: "Large conversation archive (.jsonl / .json / export ZIP; background import)" },
   { id: "auto", label: "Auto-detect (ChatGPT / Claude export ZIP or conversations.json, projects.json, memories)" },
   { id: "chatgpt_memory", label: "ChatGPT memory list (.txt/.json)" },
   { id: "claude_memory", label: "Claude memory (.txt/.json)" },
@@ -21,12 +22,14 @@ const TEXT_KINDS = [
 
 export default function ImportPage() {
   const { projects, toast, refreshConversations, refreshProjects } = useApp();
-  const [kind, setKind] = useState("auto");
+  const [kind, setKind] = useState("archive");
   const [projectId, setProjectId] = useState("");
   const [useLlm, setUseLlm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
+  const [jobs, setJobs] = useState<any[]>([]);
+  const jobStatuses = useRef<Record<string, string>>({});
   const [textKind, setTextKind] = useState("chatgpt_memory");
   const [text, setText] = useState("");
   const [drag, setDrag] = useState(false);
@@ -34,6 +37,33 @@ export default function ImportPage() {
 
   const loadHistory = () => api.get("/imports").then(setHistory).catch(() => {});
   useEffect(() => { loadHistory(); }, []);
+  const loadJobs = async () => {
+    try {
+      const rows = await api.get<any[]>("/archive/jobs");
+      const finished = rows.some((j) => j.status === "done" && jobStatuses.current[j.id] !== "done");
+      jobStatuses.current = Object.fromEntries(rows.map((j) => [j.id, j.status]));
+      setJobs(rows);
+      if (finished) { refreshConversations(); refreshProjects(); }
+    } catch { /* the next poll retries without interrupting an upload */ }
+  };
+  useEffect(() => {
+    loadJobs();
+    const timer = setInterval(loadJobs, 2000);
+    return () => clearInterval(timer);
+  }, []);
+  const jobAction = async (id: string, action: "pause" | "resume" | "remove") => {
+    try {
+      if (action === "remove") {
+        if (!confirm("Remove this job and its retained upload? Imported conversations stay in KYRO. This job can no longer be resumed.")) return;
+        await api.del(`/archive/jobs/${id}`);
+      } else await api.post(`/archive/jobs/${id}/${action}`);
+      await loadJobs();
+    } catch (e: any) { toast(e.message); }
+  };
+  const reindex = async () => {
+    try { await api.post("/archive/reindex"); await loadJobs(); }
+    catch (e: any) { toast(e.message); }
+  };
 
   const importFiles = async (files: FileList | File[]) => {
     for (const f of Array.from(files)) {
@@ -41,9 +71,10 @@ export default function ImportPage() {
       fd.append("file", f); fd.append("kind", kind); fd.append("project_id", projectId); fd.append("use_llm", String(useLlm));
       setBusy(true); setResult(null);
       try {
-        const r = await api.upload("/import", fd);
+        const r = await api.upload(kind === "archive" ? "/archive/jobs" : "/import", fd);
         setResult({ file: f.name, ...r });
-        toast(`Imported ${f.name}`, "success");
+        toast(kind === "archive" ? `Queued ${f.name}; you can leave this page` : `Imported ${f.name}`, "success");
+        await loadJobs();
       } catch (e: any) { toast(`${f.name}: ${e.message}`); setResult({ file: f.name, error: e.message }); }
       finally { setBusy(false); }
     }
@@ -83,17 +114,18 @@ export default function ImportPage() {
               </select>
             </label>
           </div>
-          <label className="flex items-center gap-2 text-sm">
+          {kind === "archive" && <p className="text-sm text-muted">Conversations are saved and indexed in the background, without a model call per message. You can pause and resume below, including after restarting KYRO. Use the standard import types for memory lists, project instructions and documents.</p>}
+          {kind !== "archive" && <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={useLlm} onChange={(e) => setUseLlm(e.target.checked)} />
             Also use the local model to extract facts (slower; every extracted fact is checked against your original words and rejected if not grounded)
-          </label>
+          </label>}
           <div onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)}
-            onDrop={(e) => { e.preventDefault(); setDrag(false); importFiles(e.dataTransfer.files); }}
-            onClick={() => fileRef.current?.click()}
+            onDrop={(e) => { e.preventDefault(); setDrag(false); if (!busy) importFiles(e.dataTransfer.files); }}
+            onClick={() => { if (!busy) fileRef.current?.click(); }}
             className={clsx("grid cursor-pointer place-items-center rounded-xl border-2 border-dashed p-10 text-center transition-colors", drag ? "border-accent bg-accent/5" : "border-border hover:border-accent/60")}>
             {busy ? <Loader2 className="animate-spin text-accent" /> : <Upload className="text-muted" />}
-            <div className="mt-2 text-sm">{busy ? "Importing… large exports can take a few minutes" : "Drop files here or click to choose"}</div>
-            <div className="text-xs text-muted">.zip · .json · .txt · .md · .pdf · .docx</div>
+            <div className="mt-2 text-sm">{busy ? "Uploading / importing…" : "Drop files here or click to choose"}</div>
+            <div className="text-xs text-muted">.zip · .json · .jsonl · .ndjson · .txt · .md · .pdf · .docx</div>
           </div>
           <input ref={fileRef} type="file" multiple hidden onChange={(e) => { if (e.target.files) importFiles(e.target.files); e.target.value = ""; }} />
         </div>
@@ -106,9 +138,32 @@ export default function ImportPage() {
         {result && (
           <div className={clsx("card p-4 text-sm", result.error && "border-red-500/50")}>
             <div className="mb-2 flex items-center gap-2 font-medium">{result.error ? <XCircle className="text-red-500" size={16} /> : <CheckCircle2 className="text-emerald-500" size={16} />}{result.file}</div>
-            {result.error ? <div className="text-red-600">{result.error}</div> : <Stats s={result} />}
+            {result.error ? <div className="text-red-600">{result.error}</div> : result.status === "queued" ? <div>Upload received. Follow the background job below.</div> : <Stats s={result} />}
           </div>
         )}
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="font-medium">Background archive imports</div>
+            <button className="btn-outline text-xs" onClick={reindex}>Index existing conversations</button>
+          </div>
+          <p className="text-xs text-muted">Existing conversations can be indexed once after upgrading. Completed uploads are removed automatically; paused or failed uploads are retained so the job can resume.</p>
+          {jobs.map((job) => (
+            <div key={job.id} className="card space-y-2 p-3 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                {job.status === "done" ? <CheckCircle2 size={16} className="text-emerald-500" /> : ["running", "queued", "pausing"].includes(job.status) ? <Loader2 size={16} className="animate-spin" /> : <XCircle size={16} className="text-amber-500" />}
+                <span className="font-medium">{job.filename}</span>
+                <span className="chip">{job.status}</span>
+                <span className="flex-1" />
+                {["running", "queued"].includes(job.status) && <button className="btn-outline text-xs" onClick={() => jobAction(job.id, "pause")}>Pause</button>}
+                {["paused", "interrupted", "failed"].includes(job.status) && <button className="btn-outline text-xs" onClick={() => jobAction(job.id, "resume")}>Resume</button>}
+                {!["running", "queued", "pausing"].includes(job.status) && <button className="btn-ghost text-xs" onClick={() => jobAction(job.id, "remove")}>Remove job</button>}
+              </div>
+              <div className="text-xs text-muted">{job.processed.toLocaleString()} processed · {job.inserted.toLocaleString()} added · {job.updated.toLocaleString()} updated · {job.duplicates.toLocaleString()} duplicates · {job.skipped.toLocaleString()} skipped</div>
+              {job.error && <div className="text-xs text-red-600">{job.error}</div>}
+            </div>
+          ))}
+          {!jobs.length && <p className="text-sm text-muted">No archive jobs yet.</p>}
+        </div>
         <div>
           <div className="label mb-2">Import history</div>
           <div className="space-y-1.5">

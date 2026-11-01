@@ -19,6 +19,8 @@ from pydantic import BaseModel
 from . import __version__
 from .agent.loop import AgentEngine, zip_dir
 from .agent.sandbox import SandboxError, Workspace, classify_command
+from .archive import ArchiveStore
+from .bulk_import import BulkImports
 from .chat import ChatService, sse
 from .config import Settings
 from .db import Database, new_id, now
@@ -40,8 +42,11 @@ class Services:
         self.router = ModelRouter(settings)
         self.embedder = Embedder(self.router)
         self.memory = MemoryStore(self.db, self.embedder, settings)
+        self.archive = ArchiveStore(self.db, self.embedder, settings)
+        self.bulk = BulkImports(self.db, settings)
         self.files = FileService(self.db, settings)
         self.chat = ChatService(self.db, self.router, self.memory, self.files, self.embedder, settings)
+        self.chat.archive = self.archive
         self.importer = Importer(self.db, self.memory, self.router, settings)
         self.agent = AgentEngine(self.db, self.router, settings, self.memory)
 
@@ -94,13 +99,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        S.bulk.recover()
         try:
             n = await seed_projects(S.db, S.memory, SEED_FILE)
             if n:
                 print(f"[kyro] seeded {n} project memories")
         except Exception as e:  # noqa: BLE001
             print(f"[kyro] WARNING: seeding failed: {e}")
-        yield
+        S.bulk.start_worker()
+        try:
+            yield
+        finally:
+            await S.bulk.shutdown()
 
     app = FastAPI(title="KYRO AI", version=__version__, lifespan=lifespan)
     app.state.services = S
@@ -224,14 +234,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return S.chat.create_conversation(c.title, c.project_id, c.mode, c.model)
 
     @app.get("/api/conversations/{cid}")
-    async def get_conversation(cid: str):
+    async def get_conversation(cid: str, limit: int = Query(200, ge=1, le=500),
+                               before_seq: int | None = None, message: str | None = None):
         conv = S.db.one("SELECT * FROM conversations WHERE id=?", (cid,))
         if not conv:
             raise HTTPException(404, "Conversation not found")
-        msgs = S.chat.messages(cid)
+        if message and before_seq is None:
+            anchor = S.db.one("SELECT seq FROM messages WHERE id=? AND conversation_id=?", (message, cid))
+            if not anchor:
+                raise HTTPException(404, "Source message not found")
+            before_seq = anchor["seq"] + limit // 2 + 1
+        rows = S.db.all(
+            "SELECT * FROM messages WHERE conversation_id=? AND (? IS NULL OR seq<?) ORDER BY seq DESC LIMIT ?",
+            (cid, before_seq, before_seq, limit))
+        msgs = list(reversed(rows))
+        for row in msgs:
+            row["attachments"] = json.loads(row["attachments"])
+            row["meta"] = json.loads(row["meta"])
         att_ids = {a for m in msgs for a in m["attachments"]}
         atts = {a: S.files.get(a) for a in att_ids}
-        return {**conv, "messages": msgs, "attachments": {k: v for k, v in atts.items() if v}}
+        has_older = bool(msgs and S.db.one("SELECT 1 FROM messages WHERE conversation_id=? AND seq<? LIMIT 1", (cid, msgs[0]["seq"])))
+        has_newer = bool(msgs and S.db.one("SELECT 1 FROM messages WHERE conversation_id=? AND seq>? LIMIT 1", (cid, msgs[-1]["seq"])))
+        return {**conv, "messages": msgs, "has_older": has_older, "has_newer": has_newer,
+                "attachments": {k: v for k, v in atts.items() if v}}
 
     @app.patch("/api/conversations/{cid}")
     async def update_conversation(cid: str, patch: dict = Body(...)):
@@ -359,6 +384,65 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"deleted": n}
 
     # ---------------------------------------------------------------- imports
+    @app.post("/api/archive/jobs", status_code=202)
+    async def archive_import(file: UploadFile = File(...), project_id: str = Form("")):
+        try:
+            job = await asyncio.to_thread(S.bulk.stage, file.file, file.filename or "messages.jsonl", project_id or None)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        S.bulk.start_worker()
+        return job
+
+    @app.get("/api/archive/jobs")
+    async def archive_jobs():
+        return [S.bulk.get(r["id"]) for r in S.db.all("SELECT id FROM archive_jobs ORDER BY created_at DESC LIMIT 100")]
+
+    @app.get("/api/archive/jobs/{jid}")
+    async def archive_job(jid: str):
+        job = S.bulk.get(jid)
+        if not job:
+            raise HTTPException(404, "Import job not found")
+        return job
+
+    @app.post("/api/archive/jobs/{jid}/{action}")
+    async def archive_job_action(jid: str, action: str):
+        try:
+            if action == "pause":
+                S.bulk.pause(jid)
+            elif action == "resume":
+                S.bulk.resume(jid)
+            else:
+                raise HTTPException(404, "Unknown job action")
+        except KeyError as exc:
+            raise HTTPException(404, "Import job not found") from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return S.bulk.get(jid)
+
+    @app.delete("/api/archive/jobs/{jid}")
+    async def delete_archive_job(jid: str):
+        try:
+            S.bulk.delete(jid)
+        except KeyError as exc:
+            raise HTTPException(404, "Import job not found") from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return {"ok": True}
+
+    @app.post("/api/archive/reindex", status_code=202)
+    async def archive_reindex():
+        job = S.bulk.reindex()
+        S.bulk.start_worker()
+        return job
+
+    @app.get("/api/archive/stats")
+    async def archive_stats():
+        return await asyncio.to_thread(S.archive.stats)
+
+    @app.get("/api/archive/search")
+    async def archive_search(q: str, project_id: str | None = None):
+        return await S.archive.search(q, project_id=project_id)
+
     @app.post("/api/import")
     async def import_file(file: UploadFile = File(...), kind: str = Form("auto"), project_id: str = Form(""), use_llm: bool = Form(False)):
         tmpdir = Path(tempfile.mkdtemp(prefix="kyro-import-", dir=settings.data_dir))

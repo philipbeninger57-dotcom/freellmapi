@@ -17,8 +17,6 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-import numpy as np
-
 from .db import Database, fts_query, new_id, now
 from .embeddings import Embedder, cosine, from_blob, to_blob
 
@@ -260,26 +258,39 @@ class MemoryStore:
         min_score = self.cfg["min_score"] if min_score is None else min_score
         if not query.strip():
             return []
-        vec, model = await self.embedder.embed_one(query)
-        cands = self._candidates(model, project_id, include_general=include_general)
-        if not cands:
-            return []
+        try:
+            vec, model = await self.embedder.embed_one(query)
+            cands = self._candidates(model, project_id, include_general=include_general)
+        except Exception:
+            vec, model, cands = None, "fts5", []
+        candidates = {c["id"]: c for c in cands}
         fts: dict[str, float] = {}
         fq = fts_query(query)
         if fq:
             try:
-                rows = self.db.all("SELECT memory_id, bm25(memories_fts) r FROM memories_fts WHERE memories_fts MATCH ? ORDER BY r LIMIT 200", (fq,))
+                scope, args = self._scope_filter(project_id, include_general=include_general)
+                rows = self.db.all(
+                    "SELECT m.*,bm25(memories_fts) r FROM memories_fts JOIN memories m ON m.id=memories_fts.memory_id "
+                    f"WHERE memories_fts MATCH ? AND status IN ('active','conflict') AND {scope} ORDER BY r LIMIT 200", (fq, *args))
                 if rows:
                     best = min(r["r"] for r in rows)
-                    fts = {r["memory_id"]: (r["r"] / best if best else 0.0) for r in rows}
+                    fts = {r["id"]: (r["r"] / best if best else 0.0) for r in rows}
+                    for row in rows:
+                        candidates.setdefault(row["id"], row)
             except Exception:  # noqa: BLE001 - malformed FTS query should never break chat
                 fts = {}
-        mat = np.stack([from_blob(c["embedding"]) for c in cands])
-        qn = vec / (np.linalg.norm(vec) or 1)
-        sims = mat @ qn / np.clip(np.linalg.norm(mat, axis=1), 1e-9, None)
+        # A lexical hit remains available across model changes and outages. Only
+        # vectors in the active space with matching dimensions are compared.
+        similarities = {}
+        for candidate in cands:
+            similarities[candidate["id"]] = cosine(vec, from_blob(candidate["embedding"]))
+        cands = list(candidates.values())
+        if not cands:
+            return []
         newest = max((c["source_time"] or c["created_at"]) for c in cands)
         scored = []
-        for c, s in zip(cands, sims):
+        for c in cands:
+            s = similarities.get(c["id"], 0.0)
             kw = fts.get(c["id"], 0.0)
             score = 0.78 * float(s) + 0.22 * kw
             age_days = (newest - (c["source_time"] or c["created_at"])) / 86400

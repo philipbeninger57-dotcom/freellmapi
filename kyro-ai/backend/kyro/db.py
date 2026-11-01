@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import sqlite3
 import threading
 import time
@@ -53,8 +54,14 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_msg_conv ON messages(conversation_id, seq);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_msg_source ON messages(conversation_id, json_extract(meta, '$.source_message_id'))
+  WHERE json_extract(meta, '$.source_message_id') IS NOT NULL;
 
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(content, conversation_id UNINDEXED, message_id UNINDEXED);
+CREATE TABLE IF NOT EXISTS message_fts_rows (
+  message_id TEXT PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+  fts_rowid INTEGER NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS memories (
   id TEXT PRIMARY KEY,
@@ -135,6 +142,53 @@ CREATE TABLE IF NOT EXISTS audit_log (
   action TEXT NOT NULL,
   detail TEXT NOT NULL DEFAULT ''
 );
+
+-- Derived archive index. Original messages and their source metadata remain authoritative.
+CREATE TABLE IF NOT EXISTS archive_chunks (
+  id INTEGER PRIMARY KEY,
+  message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  idx INTEGER NOT NULL,
+  content TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  UNIQUE(message_id, idx)
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS archive_fts USING fts5(
+  content, content='archive_chunks', content_rowid='id', tokenize='unicode61'
+);
+CREATE TRIGGER IF NOT EXISTS archive_insert AFTER INSERT ON archive_chunks BEGIN
+  INSERT INTO archive_fts(rowid, content) VALUES (new.id, new.content);
+END;
+CREATE TRIGGER IF NOT EXISTS archive_delete AFTER DELETE ON archive_chunks BEGIN
+  INSERT INTO archive_fts(archive_fts, rowid, content) VALUES ('delete', old.id, old.content);
+END;
+CREATE TRIGGER IF NOT EXISTS archive_update AFTER UPDATE OF content ON archive_chunks BEGIN
+  INSERT INTO archive_fts(archive_fts, rowid, content) VALUES ('delete', old.id, old.content);
+  INSERT INTO archive_fts(rowid, content) VALUES (new.id, new.content);
+END;
+CREATE TABLE IF NOT EXISTS archive_embeddings (
+  chunk_id INTEGER NOT NULL REFERENCES archive_chunks(id) ON DELETE CASCADE,
+  model TEXT NOT NULL,
+  embedding BLOB NOT NULL,
+  PRIMARY KEY(chunk_id, model)
+);
+CREATE TABLE IF NOT EXISTS archive_jobs (
+  id TEXT PRIMARY KEY,
+  filename TEXT NOT NULL,
+  file_path TEXT NOT NULL,
+  file_hash TEXT NOT NULL DEFAULT '',
+  project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL DEFAULT 'import',
+  status TEXT NOT NULL DEFAULT 'queued',
+  checkpoint INTEGER NOT NULL DEFAULT 0,
+  processed INTEGER NOT NULL DEFAULT 0,
+  inserted INTEGER NOT NULL DEFAULT 0,
+  updated INTEGER NOT NULL DEFAULT 0,
+  duplicates INTEGER NOT NULL DEFAULT 0,
+  skipped INTEGER NOT NULL DEFAULT 0,
+  error TEXT NOT NULL DEFAULT '',
+  created_at REAL NOT NULL,
+  updated_at REAL NOT NULL
+);
 """
 
 
@@ -142,8 +196,26 @@ def new_id() -> str:
     return uuid.uuid4().hex
 
 
+def stable_id(*parts) -> str:
+    return hashlib.sha256(json.dumps(parts, ensure_ascii=False, default=str).encode()).hexdigest()[:32]
+
+
 def now() -> float:
     return time.time()
+
+
+def index_history_message(conn: sqlite3.Connection, message_id: str, cid: str, content: str, *, replace: bool = False) -> None:
+    """Update FTS by rowid; repeated large imports must not scan all FTS rows per edit."""
+    if replace:
+        old = conn.execute("SELECT fts_rowid FROM message_fts_rows WHERE message_id=?", (message_id,)).fetchone()
+        if old:
+            conn.execute("DELETE FROM messages_fts WHERE rowid=?", (old[0],))
+        else:  # legacy rows are mapped by the explicit reindex job
+            conn.execute("DELETE FROM messages_fts WHERE message_id=?", (message_id,))
+    rowid = conn.execute("INSERT INTO messages_fts(content,conversation_id,message_id) VALUES (?,?,?)",
+                         (content, cid, message_id)).lastrowid
+    conn.execute("INSERT INTO message_fts_rows(message_id,fts_rowid) VALUES (?,?) "
+                 "ON CONFLICT(message_id) DO UPDATE SET fts_rowid=excluded.fts_rowid", (message_id, rowid))
 
 
 class Database:
@@ -187,6 +259,13 @@ class Database:
     def all(self, sql: str, params: Iterable[Any] = ()) -> list[dict]:
         return [dict(r) for r in self.conn.execute(sql, tuple(params)).fetchall()]
 
+    def close_thread(self) -> None:
+        """Release a worker thread's connection after a background job."""
+        c = getattr(self._local, "conn", None)
+        if c is not None:
+            c.close()
+            del self._local.conn
+
     def audit(self, actor: str, action: str, detail: Any = "") -> None:
         if not isinstance(detail, str):
             detail = json.dumps(detail, default=str)[:4000]
@@ -223,5 +302,9 @@ def fts_query(text: str) -> str:
 _STOP = set(
     "the a an and or but if of to in on for with is are was were be been it this that as at by from "
     "i you he she we they me my your our their what which who how why when where can could would "
-    "should do does did not no yes so than then there here have has had will just about into".split()
+    "should do does did not no yes so than then there here have has had will just about into "
+    "der die das den dem des ein eine einer einem einen und oder aber ich du er sie wir ihr "
+    "ist sind war waren wie was warum wo wann mit von für auf zu im in am an bitte "
+    "kann kannst können könntest mir mich meine mein deinem deine unser unsere "
+    "habe haben hat hatte welche welcher welches über aus bei nach noch auch".split()
 )

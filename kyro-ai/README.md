@@ -8,6 +8,9 @@ unified long-term memory built from **your exported ChatGPT and Claude data**.
 - **Unified memory.** Import ChatGPT and Claude exports, memory lists, custom instructions, Claude projects, notes,
   and code projects. KYRO merges duplicates, flags contradictions, keeps every source and timestamp, and retrieves
   relevant memories automatically (RAG).
+- **Large conversation archives.** Stream JSON/JSONL/ZIP datasets into restartable background jobs. Original
+  messages are indexed separately from personal facts and retrieved automatically with clickable sources.
+  Import requires no model calls. See [the large archive guide](docs/LARGE_ARCHIVES.md).
 - **Coding agent.** It runs the loop PLAN → READ → IMPLEMENT → TEST → DEBUG → VERIFY → DELIVER in a sandboxed
   workspace, asks your approval before risky commands, shows diffs, and marks work as *verified* only when a
   build or test command actually exited with code 0.
@@ -56,6 +59,11 @@ Development mode with hot reload: `scripts\windows\dev.ps1` (backend on :8765, V
 ---
 
 ## Importing your ChatGPT and Claude knowledge
+
+For large conversation datasets, choose **Large conversation archive** on the Import page. The job runs in
+the background with pause/resume controls. Standard import types remain available for memory extraction,
+Claude projects, documents and code projects. After upgrading, click **Index existing conversations** once
+to add your older chats to automatic archive retrieval. See [formats, limits and Windows update instructions](docs/LARGE_ARCHIVES.md).
 
 | Source | How to get it | What KYRO does |
 |---|---|---|
@@ -179,6 +187,8 @@ Windows.
 - OCR of images and scanned PDFs needs Tesseract (`winget install UB-Mannheim.TesseractOCR` and
   `pip install pytesseract`). Otherwise the vision model reads images directly.
 - Image generation requires a separately installed ComfyUI with a checkpoint.
-- Memory search is an exact scan. Past roughly 200k memories, an ANN index (e.g. sqlite-vec) would be needed.
+- Personal memory similarity still uses an exact scan; keep selected durable facts there. The conversation
+  archive uses FTS5 plus optional semantic reranking of at most 128 keyword candidates, with a persistent
+  embedding cache. It does not scan every message vector and does not provide global ANN semantic search.
 - The heuristic contradiction detector finds negation, number/version and value changes. Subtle semantic
   contradictions can be missed.

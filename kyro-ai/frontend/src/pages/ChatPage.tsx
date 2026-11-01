@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import clsx from "clsx";
 import {
   ArrowUp, Brain, ChevronDown, ChevronRight, Copy, Download, FileText, Folder, Globe, Image as ImageIcon, Loader2,
@@ -13,7 +13,7 @@ import ArtifactPanel, { Artifact } from "../components/ArtifactPanel";
 
 type Msg = {
   id: string; role: "user" | "assistant"; content: string; model?: string; attachments: string[]; meta: any;
-  streaming?: boolean; thinking?: string; status?: string;
+  streaming?: boolean; thinking?: string; status?: string; seq?: number;
 };
 type Att = { id: string; filename: string; kind: string; size: number; analysis?: any; error?: string };
 
@@ -161,6 +161,20 @@ function Message({ m, atts, onPreview, onRegenerate, isLast }: { m: Msg; atts: R
           ))}
         </div>
       )}
+      {meta.archive_sources?.length > 0 && (
+        <details className="mt-3 rounded-lg border border-border p-2 text-xs">
+          <summary className="cursor-pointer">{meta.archive_sources.length} archive sources</summary>
+          <ul className="mt-2 space-y-2">
+            {meta.archive_sources.map((s: any) => (
+              <li key={s.id}>
+                <a href={s.url} target="_blank" rel="noopener noreferrer" className="text-accent underline">[{s.label}] {s.title}</a>
+                <span className="ml-2 text-muted">{s.source} · {s.role} · {s.source_time ? new Date(s.source_time * 1000).toLocaleDateString() : "date unknown"}</span>
+                <p className="mt-1 whitespace-pre-wrap text-muted">{s.content}</p>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       {!m.streaming && (
         <div className="mt-2 flex flex-wrap items-center gap-1 text-xs text-muted opacity-70 transition-opacity group-hover:opacity-100">
           {m.model && <span className="chip">{m.model}</span>}
@@ -184,6 +198,8 @@ function Message({ m, atts, onPreview, onRegenerate, isLast }: { m: Msg; atts: R
 
 export default function ChatPage() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const focusMessage = searchParams.get("message");
   const nav = useNavigate();
   const { projects, refreshConversations, toast, models } = useApp();
   const [conv, setConv] = useState<any>(null);
@@ -200,6 +216,8 @@ export default function ChatPage() {
   const [drag, setDrag] = useState(false);
   const [artifact, setArtifact] = useState<Artifact | null>(null);
   const [mobileList, setMobileList] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const keepScroll = useRef(false);
   const abortRef = useRef<() => void>();
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -208,13 +226,13 @@ export default function ChatPage() {
 
   const load = useCallback(async (cid: string) => {
     try {
-      const c = await api.get(`/conversations/${cid}`);
+      const c = await api.get(`/conversations/${cid}`, { message: focusMessage });
       setConv(c);
       setMsgs(c.messages.map((m: any) => ({ ...m })));
       setAtts(c.attachments || {});
       setMode(c.mode); setModel(c.model); setProjectId(c.project_id || "");
     } catch (e: any) { toast(e.message); nav("/"); }
-  }, [nav, toast]);
+  }, [nav, toast, focusMessage]);
 
   useEffect(() => {
     if (id && skipLoad.current === id) { skipLoad.current = null; return; }
@@ -223,7 +241,27 @@ export default function ChatPage() {
     else { setConv(null); setMsgs([]); setAtts({}); setMode("chat"); setModel("auto"); }
   }, [id, load]);
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: busy ? "auto" : "smooth" }); }, [msgs, busy]);
+  useEffect(() => {
+    if (keepScroll.current) { keepScroll.current = false; return; }
+    const source = focusMessage && !busy ? document.getElementById(`message-${focusMessage}`) : null;
+    if (source) source.scrollIntoView({ block: "center" });
+    else bottomRef.current?.scrollIntoView({ behavior: busy ? "auto" : "smooth" });
+  }, [msgs, busy, focusMessage]);
+  const loadOlder = async () => {
+    if (!conv || !msgs.length || loadingOlder || msgs[0].seq === undefined) return;
+    setLoadingOlder(true);
+    try {
+      const page = await api.get(`/conversations/${conv.id}`, { before_seq: msgs[0].seq });
+      keepScroll.current = true;
+      setMsgs((current) => {
+        const ids = new Set(current.map((message) => message.id));
+        return [...page.messages.filter((message: Msg) => !ids.has(message.id)), ...current];
+      });
+      setAtts((current) => ({ ...current, ...page.attachments }));
+      setConv((current: any) => ({ ...current, has_older: page.has_older }));
+    } catch (e: any) { toast(e.message); }
+    finally { setLoadingOlder(false); }
+  };
   useEffect(() => {
     const ta = taRef.current;
     if (ta) { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 280) + "px"; }
@@ -274,7 +312,7 @@ export default function ChatPage() {
     abortRef.current = stream(`/conversations/${cid}/chat`,
       { text: body, attachments: attIds, mode, model, web_search: web, regenerate },
       ({ event, data }) => {
-        if (event === "meta") update((a) => ({ ...a, model: data.model, meta: { ...a.meta, memories: data.memories, documents: data.documents }, status: data.summarized ? "Summarised older messages to fit the context window" : a.status }));
+        if (event === "meta") update((a) => ({ ...a, model: data.model, meta: { ...a.meta, memories: data.memories, documents: data.documents, archive_sources: data.archive_sources }, status: data.summarized ? "Summarised older messages to fit the context window" : a.status }));
         else if (event === "status") update((a) => ({ ...a, status: data.message }));
         else if (event === "citations") update((a) => ({ ...a, meta: { ...a.meta, citations: data } }));
         else if (event === "thinking") update((a) => ({ ...a, thinking: (a.thinking || "") + data.delta }));
@@ -334,8 +372,12 @@ export default function ChatPage() {
                 </div>
               </div>
             )}
+            {conv?.has_older && <button className="btn-outline text-xs" disabled={loadingOlder} onClick={loadOlder}>{loadingOlder ? "Loading…" : "Load earlier messages"}</button>}
+            {(focusMessage || conv?.has_newer) && <a className="block text-xs text-accent underline" href={`/c/${id}`}>Open latest messages</a>}
             {msgs.map((m, i) => (
-              <Message key={m.id} m={m} atts={atts} onPreview={setArtifact} isLast={i === msgs.length - 1 && !busy} onRegenerate={() => send(true)} />
+              <div id={`message-${m.id}`} key={m.id} className={clsx(focusMessage === m.id && "rounded-xl ring-2 ring-accent p-3")}>
+                <Message m={m} atts={atts} onPreview={setArtifact} isLast={i === msgs.length - 1 && !busy && !conv?.has_newer} onRegenerate={() => send(true)} />
+              </div>
             ))}
             <div ref={bottomRef} />
           </div>

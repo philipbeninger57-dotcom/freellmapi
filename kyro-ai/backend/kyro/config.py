@@ -60,6 +60,15 @@ DEFAULTS: dict[str, Any] = {
         "conflict_threshold": 0.78,
         "auto_extract_from_chats": False,
     },
+    "archive": {
+        "auto_retrieve": True,
+        "top_k": 6,
+        "candidate_limit": 48,
+        "semantic_rerank": True,
+        "context_tokens": 1200,
+        "batch_size": 500,
+        "max_import_gb": 20,
+    },
     "custom_instructions": "",
     "personalities": {
         "default": "You are KYRO AI, a precise, honest and capable personal assistant. "
@@ -106,7 +115,7 @@ class Settings:
             data = deepcopy(DEFAULTS)
             if self.config_path.exists():
                 try:
-                    data = _merge(data, json.loads(self.config_path.read_text("utf-8")))
+                    data = _merge(data, json.loads(self.config_path.read_text("utf-8-sig")))
                 except json.JSONDecodeError as e:  # keep running with defaults, but tell the user
                     print(f"[kyro] WARNING: {self.config_path} is invalid JSON ({e}); using defaults")
             for env, (key, cast) in ENV_MAP.items():

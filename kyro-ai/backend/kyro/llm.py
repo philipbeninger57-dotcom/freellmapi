@@ -107,6 +107,7 @@ class OllamaProvider:
                    options: dict | None = None, think: bool | None = None) -> AsyncIterator[ChatChunk]:
         body: dict[str, Any] = {
             "model": model, "messages": _ollama_messages(messages), "stream": True,
+            "keep_alive": "10m",
             "options": {"num_ctx": self.num_ctx, **(options or {})},
         }
         if tools:
@@ -138,7 +139,8 @@ class OllamaProvider:
                                        tool_calls=[_norm_tool_call(t) for t in msg.get("tool_calls") or []])
                         if d.get("done"):
                             ch.done = True
-                            ch.stats = {k: d.get(k) for k in ("total_duration", "eval_count", "prompt_eval_count", "eval_duration")}
+                            ch.stats = {k: d.get(k) for k in ("total_duration", "load_duration", "eval_count",
+                                                            "prompt_eval_count", "prompt_eval_duration", "eval_duration", "done_reason")}
                         yield ch
         except httpx.ConnectError as e:
             raise LLMError(f"Cannot connect to Ollama at {self.base_url}. Is it running? Start it with 'ollama serve'.") from e
@@ -146,7 +148,7 @@ class OllamaProvider:
     async def embed(self, model: str, texts: list[str]) -> list[list[float]]:
         try:
             async with self._client(120) as c:
-                r = await c.post("/api/embed", json={"model": model, "input": texts})
+                r = await c.post("/api/embed", json={"model": model, "input": texts, "keep_alive": "10m"})
                 if r.status_code == 404:
                     raise LLMError(f"Embedding model '{model}' not installed. Run: ollama pull {model}")
                 r.raise_for_status()

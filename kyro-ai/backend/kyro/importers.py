@@ -19,7 +19,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
-from .db import Database, new_id, now
+from .db import Database, index_history_message, new_id, now, stable_id
 from .embeddings import chunk_text
 from .memory import MemoryStore, extract_candidates, is_grounded, normalize
 
@@ -69,7 +69,8 @@ def parse_chatgpt_conversations(data: list[dict]) -> list[dict]:
             if c.get("content_type") in ("code", "execution_output") and c.get("text"):
                 text = f"```\n{c['text']}\n```"
             if text:
-                msgs.append({"role": role, "content": text, "time": parse_time(m.get("create_time"))})
+                msgs.append({"id": str(m.get("id") or node.get("id") or len(msgs)),
+                             "role": role, "content": text, "time": parse_time(m.get("create_time"))})
         if msgs:
             convs.append({"id": str(conv.get("conversation_id") or conv.get("id") or new_id()),
                           "title": conv.get("title") or "Untitled", "created": parse_time(conv.get("create_time")),
@@ -109,7 +110,8 @@ def parse_claude_conversations(data: list[dict] | dict) -> list[dict]:
                 if a.get("extracted_content"):
                     text += f"\n\n[Attachment: {a.get('file_name', 'file')}]\n{a['extracted_content'][:20000]}"
             if text.strip():
-                msgs.append({"role": role, "content": text.strip(), "time": parse_time(m.get("created_at"))})
+                msgs.append({"id": str(m.get("uuid") or m.get("id") or len(msgs)),
+                             "role": role, "content": text.strip(), "time": parse_time(m.get("created_at"))})
         if msgs:
             convs.append({"id": str(conv.get("uuid") or conv.get("id") or new_id()), "title": conv.get("name") or conv.get("title") or "Untitled",
                           "created": parse_time(conv.get("created_at")), "updated": parse_time(conv.get("updated_at")),
@@ -336,6 +338,8 @@ class Importer:
                 progress({"done": i + 1, "total": len(convs)})
 
     def _store_conversation(self, conv: dict, source: str, project_id) -> str:
+        from .archive import index_message
+
         existing = self.db.one("SELECT id FROM conversations WHERE source=? AND source_id=?", (source, conv["id"]))
         t = now()
         with self.db.transaction() as c:
@@ -349,10 +353,12 @@ class Importer:
                 c.execute("INSERT INTO conversations(id,title,project_id,source,source_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
                           (cid, conv["title"][:300], project_id, source, conv["id"], conv["created"] or t, conv["updated"] or conv["created"] or t))
             for seq, m in enumerate(conv["messages"]):
-                mid = new_id()
-                c.execute("INSERT INTO messages(id,conversation_id,seq,role,content,created_at) VALUES (?,?,?,?,?,?)",
-                          (mid, cid, seq, m["role"], m["content"], m["time"] or conv["created"] or t))
-                c.execute("INSERT INTO messages_fts(content, conversation_id, message_id) VALUES (?,?,?)", (m["content"], cid, mid))
+                source_mid = str(m.get("id") or seq)
+                mid = stable_id(source, conv["id"], source_mid)
+                c.execute("INSERT INTO messages(id,conversation_id,seq,role,content,meta,created_at) VALUES (?,?,?,?,?,?,?)",
+                          (mid, cid, seq, m["role"], m["content"], json.dumps({"source_message_id": source_mid, "source_time": m["time"]}), m["time"] or conv["created"] or t))
+                index_history_message(c, mid, cid, m["content"])
+                index_message(c, mid, m["content"])
         return cid
 
     async def _llm_extract(self, user_text: str, source: str, cid: str, when, stats: dict, project_id) -> None:
