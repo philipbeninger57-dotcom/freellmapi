@@ -1,0 +1,37 @@
+name: KYRO-AntiCheat
+version: '${project.version}'
+main: de.kyrosmp.anticheat.KyroAntiCheat
+api-version: '1.21'
+folia-supported: true
+author: KYROSMP
+description: KYRO AntiCheat for Paper and Folia - Movement and combat detection with position synchronisation, persistent flag history and SUS GUI.
+softdepend: [floodgate]
+commands:
+  sus:
+    description: Opens the KYRO anti-cheat suspect GUI
+    usage: /sus [player|clear <player>]
+  acalerts:
+    description: Toggles KYRO AntiCheat staff alerts for yourself
+    usage: /acalerts
+  kyro:
+    description: KYRO AntiCheat administration
+    usage: /kyro <info|violations|history|reset|reload|checks|debug|purge>
+    aliases: [kac]
+permissions:
+  kyroac.sus:
+    description: /sus GUI and flag history; as in 2.2.0 includes teleport/spectate and status changes
+    default: op
+    children:
+      kyroac.teleport: true
+      kyroac.spectate: true
+      kyroac.manage: true
+  kyroac.alerts: {default: op, description: "Receive alerts and use /acalerts"}
+  kyroac.clear: {default: op, description: "/sus clear and /kyro reset"}
+  kyroac.bypass: {default: false, description: "Exempt from all checks and punishments"}
+  kyroac.command: {default: op, description: "/kyro info, violations, checks"}
+  kyroac.manage: {default: op, description: "Mark flags as reviewed/resolved"}
+  kyroac.teleport: {default: op, description: "Teleport to a player from the GUI"}
+  kyroac.spectate: {default: op, description: "Switch to spectator mode from the GUI"}
+  kyroac.debug: {default: op, description: "/kyro debug"}
+  kyroac.reload: {default: op, description: "/kyro reload"}
+  kyroac.purge: {default: false, description: "Permanently delete flag history - grant deliberately (the server console may always purge)"}

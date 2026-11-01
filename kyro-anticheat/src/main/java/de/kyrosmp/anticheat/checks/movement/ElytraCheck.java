@@ -1,0 +1,229 @@
+package de.kyrosmp.anticheat.checks.movement;
+
+import de.kyrosmp.anticheat.core.CheckConfig;
+import de.kyrosmp.anticheat.core.MoveContext;
+import de.kyrosmp.anticheat.core.Physics;
+import de.kyrosmp.anticheat.core.PlayerData;
+import de.kyrosmp.anticheat.core.PreventionConfig;
+import de.kyrosmp.anticheat.core.SetbackService;
+import de.kyrosmp.anticheat.flag.FlagSink;
+
+import org.bukkit.GameMode;
+import org.bukkit.Location;
+import org.bukkit.entity.Player;
+
+import java.util.Locale;
+
+public final class ElytraCheck {
+    public static final int HOVER_TICKS = 15;
+    public static final long BOOST_RESET_MS = 3500L;
+    private final FlagSink sink;
+    private final SetbackService punisher;
+    private volatile CheckConfig cfg;
+    private PreventionConfig prevention = PreventionConfig.defaults();
+    public static final long CANDIDATE_CONFIRM_MS = 1000L;
+    public static final long RECENT_GROUND_MS = 3000L;
+    public static final long GLIDE_SAFE_MAX_AGE_MS = 10000L;
+
+    public ElytraCheck withPrevention(PreventionConfig policy) {
+        this.prevention = policy;
+        return this;
+    }
+
+    public ElytraCheck(FlagSink sink, SetbackService punisher, CheckConfig cfg) {
+        this.sink = sink;
+        this.punisher = punisher;
+        this.cfg = cfg;
+    }
+
+    public void configure(CheckConfig cfg) {
+        this.cfg = cfg;
+    }
+
+    public void check(Player p, PlayerData d, MoveContext m) {
+        CheckConfig c = this.cfg;
+        if (c.elytraEnabled()
+                && m.gliding
+                && m.gameMode != GameMode.CREATIVE
+                && m.gameMode != GameMode.SPECTATOR
+                && !m.allowFlight
+                && !m.flying) {
+            long now = m.now;
+            boolean boosted =
+                    now - d.lastElytraBoost < 3500L
+                            || now < d.velocityGraceUntil
+                            || m.riptiding
+                            || now - d.lastRiptide < c.graceRiptideMs()
+                            || now - d.lastTeleport < c.graceTeleportMs()
+                            || m.insideVehicle
+                            || m.levitation
+                            || now - d.lastLiquid < 600L;
+            if (boosted) {
+                reset(d);
+            } else {
+                double speed = m.speed3d();
+                String mode = null;
+                boolean still = m.horizontal < 0.08 && Math.abs(m.dy) < 0.03;
+                int n =
+                        d.elytraHoverTicks =
+                                still && !m.geo.collisionNearby() ? d.elytraHoverTicks + 1 : 0;
+                if (d.elytraHoverTicks == 0) {
+                    d.elytraHoverSince = 0L;
+                } else if (d.elytraHoverSince == 0L) {
+                    d.elytraHoverSince = now;
+                }
+
+                if (d.elytraHoverTicks >= 15 && now - d.elytraHoverSince >= 700L) {
+                    mode = "hover";
+                }
+
+                double ceiling = m.toY + Physics.elytraClimbBudget(speed);
+                double min = d.elytraCeilingMin;
+                if (Double.isNaN(min)) {
+                    min = m.fromY + Physics.elytraClimbBudget(speed);
+                }
+
+                if (m.toY > min && mode == null) {
+                    mode = String.format(Locale.US, "climb: y=%.1f above ceiling %.1f", m.toY, min);
+                }
+
+                d.elytraCeilingMin = Math.min(min, ceiling);
+                int n2 = d.elytraFastTicks = speed > c.elytraMaxSpeed() ? d.elytraFastTicks + 1 : 0;
+                if (d.elytraFastTicks >= 3 && mode == null) {
+                    mode = String.format(Locale.US, "speed=%.2f > %.2f", speed, c.elytraMaxSpeed());
+                }
+
+                if (mode == null) {
+                    d.elytraBuffer = Math.max(0.0, d.elytraBuffer - 0.1);
+                    if (d.elytraBuffer == 0.0 && m.world != null) {
+                        if (d.elytraCandAt != 0L
+                                && d.elytraCandWorld == m.world
+                                && now - d.elytraCandAt >= 1000L) {
+                            d.elytraSafeWorld = d.elytraCandWorld;
+                            d.elytraSafeX = d.elytraCandX;
+                            d.elytraSafeY = d.elytraCandY;
+                            d.elytraSafeZ = d.elytraCandZ;
+                            d.elytraSafeAt = d.elytraCandAt;
+                            d.elytraCandAt = 0L;
+                        }
+
+                        if (d.elytraCandAt == 0L) {
+                            d.elytraCandWorld = m.world;
+                            d.elytraCandX = m.toX;
+                            d.elytraCandY = m.toY;
+                            d.elytraCandZ = m.toZ;
+                            d.elytraCandAt = now;
+                        }
+                    }
+                } else {
+                    d.elytraCandAt = 0L;
+                    if (this.prevention.instant() && c.elytraSetback()) {
+                        d.preventMove = true;
+                        Location safe = verifiedGlidePosition(d, m, now);
+                        if (safe != null) {
+                            this.punisher.setbackTo(p, d, safe, null);
+                        } else {
+                            this.punisher.setback(p, d, null);
+                        }
+                    }
+
+                    d.elytraBuffer++;
+                    if (d.elytraBuffer >= c.elytraFlagAt()) {
+                        String reason =
+                                mode.startsWith("hover")
+                                        ? "Hovering while gliding"
+                                        : (mode.startsWith("climb")
+                                                ? "Gaining more altitude than the glide allows"
+                                                : "Gliding faster than possible without boost");
+                        int incidents = recordIncident(d, now, c.elytraSetbackWindowMs());
+                        String id =
+                                this.sink.flag(
+                                        p,
+                                        d,
+                                        "ElytraFly A",
+                                        reason,
+                                        String.format(
+                                                Locale.US,
+                                                "mode=%s; dy=%.3f; horizontal=%.3f; speed=%.3f;"
+                                                        + " buffer=%.1f; incidents=%d/%ds",
+                                                mode,
+                                                m.dy,
+                                                m.horizontal,
+                                                speed,
+                                                d.elytraBuffer,
+                                                incidents,
+                                                c.elytraSetbackWindowMs() / 1000L));
+                        d.elytraBuffer = 1.0;
+                        if (id != null) {
+                            d.lastElytraFlagId = id;
+                        }
+
+                        String evidenceId = id != null ? id : d.lastElytraFlagId;
+                        if (this.prevention.movement()
+                                && c.elytraSetback()
+                                && incidents >= c.elytraSetbackAfterFlags()) {
+                            boolean recentGround =
+                                    d.lastSafe != null
+                                            && d.lastSafe.getWorld() == m.world
+                                            && now - d.lastSafeAt <= 3000L;
+                            Location target =
+                                    recentGround ? null : verifiedGlidePosition(d, m, now);
+                            boolean done =
+                                    target != null
+                                            ? this.punisher.setbackTo(p, d, target, evidenceId)
+                                            : this.punisher.setback(p, d, evidenceId);
+                            if (done) {
+                                synchronized (d.elytraIncidents) {
+                                    d.elytraIncidents.clear();
+                                }
+
+                                if (evidenceId != null) {
+                                    this.sink.action(
+                                            evidenceId, "Setback (" + incidents + " incidents)");
+                                }
+                            } else if (target != null) {
+                                d.elytraSafeAt = 0L;
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            reset(d);
+            d.elytraBuffer = Math.max(0.0, d.elytraBuffer - 0.1);
+        }
+    }
+
+    static Location verifiedGlidePosition(PlayerData d, MoveContext m, long now) {
+        if (d.elytraSafeAt == 0L || now - d.elytraSafeAt > 10000L) {
+            return null;
+        } else {
+            return d.elytraSafeWorld != null && d.elytraSafeWorld == m.world
+                    ? new Location(d.elytraSafeWorld, d.elytraSafeX, d.elytraSafeY, d.elytraSafeZ)
+                    : null;
+        }
+    }
+
+    static int recordIncident(PlayerData d, long now, long windowMs) {
+        synchronized (d.elytraIncidents) {
+            d.elytraIncidents.addLast(now);
+
+            while (!d.elytraIncidents.isEmpty()
+                    && (now - d.elytraIncidents.peekFirst() > windowMs
+                            || d.elytraIncidents.size() > 16)) {
+                d.elytraIncidents.pollFirst();
+            }
+
+            return d.elytraIncidents.size();
+        }
+    }
+
+    private static void reset(PlayerData d) {
+        d.elytraCeilingMin = Double.NaN;
+        d.elytraHoverTicks = 0;
+        d.elytraHoverSince = 0L;
+        d.elytraFastTicks = 0;
+        d.elytraCandAt = 0L;
+        d.elytraCandWorld = null;
+    }
+}

@@ -1,0 +1,244 @@
+# KYRO AntiCheat 3.8.0 for Paper and Folia 1.21.11
+# Event-based prediction rejects moves beyond its physical bounds; this is not a complete client simulation.
+# Defaults are the cautious ones: alert-only Timer, correction-only hover, protect-setbacks off.
+# Strict mode: checks.timer.prevent: true and prevention.protect-setbacks: true.
+# Legacy check settings remain readable; prevention and no-kick policy changed in 3.6.
+# Keys missing from an older config.yml automatically use these defaults; your file is never overwritten.
+# 3.6 prevention is independent of flag/alert cooldowns. No automatic kicks/bans exist.
+# AutoTotem is deliberately NOT included (removed in 2.2.0 because another plugin handles it).
+
+# Exempt Bedrock players (Geyser/Floodgate) from all checks, as in 2.2.0.
+# With Floodgate installed its API decides; without it, only names with the "." prefix AND a Floodgate-style
+# UUID (00000000-0000-0000-...) count, so Java players on offline-mode servers cannot exempt themselves.
+bedrock:
+  exempt: true
+
+alerts:
+  console: true               # also print alerts without colours to the console (as in 2.2.0)
+
+punishments:
+  auto-kick: false             # cannot be enabled in 3.6; the implementation was removed
+  auto-ban: false              # cannot be enabled in 3.6
+  kick-min-tps: 18.0          # legacy compatibility key, no effect: kicks have been removed
+
+prevention:
+  enabled: true
+  instant-setback: true        # act once motion evidence is established, before flag thresholds
+  safe-position-history: true  # keep up to 20 verified ground anchors, revalidate before teleport
+  prevent-illegal-movement: true
+  prevent-illegal-actions: true
+  protect-setbacks: false      # respect other plugins; true deliberately overrides their teleport cancellation
+  ground-fallback: true        # 3.7: without a recorded safe position, set back onto the first solid ground below
+
+checks:
+  # ---------------- ported from 2.2.0 ----------------
+  fly:
+    enabled: true
+    buffer: {flag-at: 5.0}
+    # Grace periods. During teleport and knockback grace, Fly A still flags motion no impulse can explain
+    # (rising long after the impulse, hovering).
+    # teleport-ms runs from the teleport itself. Folia fires no teleport event for /tp, plugins, ender pearls,
+    # respawns or portals; KYRO notices those at the next move and counts the grace from the last position it saw
+    # before the teleport. KYRO's own setbacks grant no new general teleport grace.
+    grace: {teleport-ms: 3000, velocity-ms: 2500, elytra-ms: 3000, riptide-ms: 2500}
+    # Fly B (3.7): every airborne move must follow vanilla gravity from the previous one. The first impossible tick is
+    # rejected, a repeat within one second (or a large deviation) returns the player to validated ground. Knockback,
+    # explosions, wind charges, mace smashes, jumps and Jump Boost are part of the prediction; also catches fast
+    # climbing on ladders/vines/scaffolding (more than 0.2 blocks per tick).
+    prediction:
+      enabled: true
+      tolerance: 0.03         # blocks per tick above the vanilla maximum before a move counts as impossible
+      flag-at: 3.0            # alerts only; prevention does not wait for this
+    # Hover heartbeat: correct unsupported stationary positions to safe ground.
+    # Silence may be a client/network stall, so it never creates a cheat flag or suspicion score.
+    hover:
+      enabled: true
+      still-ms: 1200          # no movement for this long while nothing supports the player
+    punishment:
+      setback: true
+      kick: false             # obsolete; no kick code remains
+      flags: 4                # obsolete compatibility key; no automatic kicks
+      window-seconds: 30      # obsolete compatibility key
+      max-ping-for-kick: 180  # obsolete compatibility key
+      kick-message: "&5&lKYROSMP\n&cUnfair Advantage Detected\n&7Reason: &fFly\n\n&8If this was a mistake, contact staff."
+  speed:
+    enabled: true
+    setback: true             # revert the move (no extra grace afterwards since 3.3)
+    buffer: {flag-at: 6.0}
+    # Speed B (3.7): momentum prediction with vanilla friction and acceleration (sprint, Speed, attributes, ice,
+    # sprint jumps, knockback). Speed cannot be built up step by step: accepted moves never raise the next limit.
+    prediction:
+      enabled: true
+      tolerance: 0.04         # blocks per tick above the vanilla maximum
+      flag-at: 4.0
+  # Step A (3.7): stepping up more than the step_height attribute (default 0.6 blocks) in one move.
+  step:
+    enabled: true
+    buffer: {flag-at: 2.0}
+  # NoSlow A (3.7): walking at full speed while eating, drinking, blocking or drawing a bow.
+  # NoSlow B (3.8): walking at full speed while sneaking (sneaking_speed attribute, Swift Sneak included).
+  noslow:
+    enabled: true
+    buffer: {flag-at: 4.0}
+  # Timer A (3.8): pauses only grant credit for the time really lost (max. 1 s, 10 s when the server itself
+  # stalled), so lag-switch style pauses no longer open a free window. Also judged during knockback/elytra grace.
+  # Sprint A (3.8): sprint start with 6 or fewer food points (impossible in vanilla). The start is refused and
+  # Speed B no longer grants sprint speed to hungry players, which closes hunger/omni-sprint bypasses.
+  sprint:
+    enabled: true
+    buffer: {flag-at: 2.0}
+  timer:
+    enabled: true
+    max-balance-ms: 350
+    prevent: false            # false = alert only; true = reject surplus moves (no ground setback)
+  nofall:
+    enabled: true
+    ground-spoof-setback: true
+  badpackets:
+    enabled: true
+  boatfly:
+    enabled: true
+    buffer: {flag-at: 4.5}
+    punishment:
+      setback: true
+      kick: false             # obsolete; no kick code remains
+      flags: 4
+      window-seconds: 30
+      max-ping-for-kick: 180
+      kick-message: "&5&lKYROSMP\n&cUnfair Advantage Detected\n&7Reason: &fBoatFly\n\n&8If this was a mistake, contact staff."
+  reach:
+    enabled: true
+    cancel-hit: true          # allow prevention; instant-cancel below acts before buffer threshold
+    instant-cancel: true      # 3.7: every hit beyond the lag-compensated limit is cancelled at once
+    tolerance: 0.3            # added to max(entity_interaction_range attribute, item attack_range); lag-compensated
+  killaura:
+    enabled: true
+    cancel-hit: true
+    max-angle: 75             # degrees between look direction and target
+    # KillAura B: min-angle (new in 3.3) = minimum angle between two consecutive targets for a switch to count
+    switch: {max-interval-ms: 140, window-ms: 800, max-switches: 6, min-angle: 30}
+    # KillAura C (new in 3.4): hits through solid blocks (all 10 lines of sight blocked). Uses cancel-hit above.
+    wall:
+      enabled: true
+      buffer: {flag-at: 4.0}
+    # KillAura D (3.8): attacks without the arm swing every vanilla client sends. Uses cancel-hit above.
+    # Disable if another plugin makes players attack through the API (Player#attack) without a swing.
+    noswing:
+      enabled: true
+      buffer: {flag-at: 3.0}
+  # Criticals A: critical hits while resting on a block without a real jump or fall; prevention is configurable.
+  criticals:
+    enabled: true
+    buffer: {flag-at: 4.0}
+    prevent: true             # 3.7: a critical without a real fall loses its 1.5x bonus
+
+  # ---------------- additional movement, combat and action checks ----------------
+  jesus:
+    enabled: true
+    ticks: 8
+    buffer: {flag-at: 3.0}
+    setback: true             # instant policy also activates Jesus prevention in older configs
+  velocity:
+    enabled: true
+    min-knockback: 0.3        # weaker knockback is not checked
+    buffer: {flag-at: 3.0}
+  autoclicker:
+    enabled: true
+    max-cps: 30
+    sustain-seconds: 3
+    cancel-hits: true         # 3.7: hits do no damage while the click rate of the last second is above max-cps
+  scaffold:
+    enabled: true
+    tolerance: 0.25
+    buffer: {flag-at: 4.0}
+    # Scaffold B (3.7): placing against a block face the eye is behind (impossible for a vanilla crosshair).
+    face:
+      enabled: true
+      buffer: {flag-at: 3.0}
+  fastplace:
+    enabled: true
+    max-per-second: 20
+    buffer: {flag-at: 3.0}
+  inventorymove:
+    enabled: true
+    min-speed: 0.15
+    buffer: {flag-at: 4.0}
+    cancel-clicks: true       # refuse clicks once two separate movement samples prove movement
+    open-grace-ms: 25         # samples this soon after opening never count (0-1000; 3.7.1-custom used 250)
+
+  # ---------------- new in 3.7 ----------------
+  # Nuker A: more dig starts per second than a client can produce. Excess digs are cancelled.
+  # Only genuine client digs count - breaks simulated by other plugins (tree feller, vein miner) are not touched.
+  nuker:
+    enabled: true
+    max-per-second: 25        # vanilla insta-mining is at most 20 blocks per second
+    buffer: {flag-at: 3.0}
+  # GhostHand A: digging a block that is completely hidden behind other blocks. The dig is cancelled.
+  ghosthand:
+    enabled: true
+    buffer: {flag-at: 3.0}
+
+  # ---------------- elytra checks (prevention enabled by default) ----------------
+  # ElytraFly A: hovering, climbing above what an unboosted glide allows, or gliding faster than max-speed.
+  # Firework boosts, knockback, riptide, teleports, levitation and liquids reset the reference (3.5 s per boost).
+  # Confidence tiers (3.4): a full buffer is one incident (alert + evidence). With setback: true, the player is set
+  # back once setback-after-flags incidents happened within setback-window-seconds – to the last glide position that
+  # passed every rule (max. 10 s old, same world), else to the last ground position.
+  elytrafly:
+    enabled: true
+    buffer: {flag-at: 4.0}
+    setback: true
+    setback-after-flags: 1     # legacy buffered mode; instant prevention does not wait for incidents
+    setback-window-seconds: 10
+    max-speed: 4.5            # blocks per tick without boost (vanilla dive converges to 3.92)
+
+  # ---------------- new in 3.4 (alert only) ----------------
+  # XRay A: mining statistics. Counts rare-ore veins (diamond, emerald, ancient debris) that the player reached only
+  # through their own digging and the stone-type blocks mined. Flags once per window when at least min-hidden-veins
+  # such veins were found with fewer than max-blocks-per-vein rock blocks per vein. It does NOT hide ores: enable
+  # Paper's native anti-xray in config/paper-world-defaults.yml for that (see docs/ANTI-XRAY.md).
+  xray:
+    enabled: true
+    min-hidden-veins: 5
+    max-blocks-per-vein: 40
+    window-minutes: 20
+
+# Persistent flag history (SQLite in the plugin folder)
+storage:
+  file: flags.db              # file name only; changes take effect after a restart
+  retention-days: 0           # 0 = off; delete only old RESOLVED flags, max 1000/hour; audit stays
+  queue-capacity: 10000
+  shutdown-timeout-seconds: 10
+
+flags:
+  duplicate-window-ms: 40     # same check within the same tick = duplicate
+  merge-window-ms: 1200       # per-check cooldown as in 2.2.0; further triggers are counted on the same record
+  current-window-minutes: 30
+
+violations:
+  vl-per-flag: 1.0
+  decay-per-minute: 1.0
+
+# Suspicion level – not proof and no reason for automatic bans
+confidence:
+  window-minutes: 10
+  medium-repetitions: 3
+  high-repetitions: 8
+  high-total-with-three-groups: 6
+  poor-data-ping: 250
+  poor-data-min-tps: 18.0      # lower/unavailable TPS limit confidence; 0 disables TPS quality limit
+
+gui:
+  date-format: "dd.MM.yyyy HH:mm:ss"
+  timezone: system
+  # Staff inspection (3.4): spectating a player from /sus starts an inspection. While it is active the staff member is
+  # moved to the player's CURRENT position whenever they are farther than max-distance blocks away or in another
+  # world (exactly max-distance is allowed). The staff member is sent to the player immediately when spectating starts.
+  # It ends when the staff member leaves spectator mode (/gms, /gamemode survival, ...) or either player disconnects.
+  inspection:
+    enabled: true
+    max-distance: 100
+    check-interval-ticks: 10
+
+debug:
+  max-messages-per-second: 2
