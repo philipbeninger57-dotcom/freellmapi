@@ -123,6 +123,15 @@ def test_import_endpoints_and_memory_api(stub_settings, tmp_path):
         assert c.delete(f"/api/memories/{mid}").json()["ok"]
         exp = c.get("/api/memories/export?fmt=json").json()
         assert all(m["id"] != mid for m in exp["memories"])
+        # round trip: export → wipe → re-import keeps kind/source/timestamp
+        c.post("/api/memories", json={"content": "Main editor is IntelliJ IDEA", "kind": "preference"})
+        dump = c.get("/api/memories/export?fmt=json").content
+        for m in c.get("/api/memories", params={"limit": 1000}).json()["items"]:
+            c.delete(f"/api/memories/{m['id']}")
+        r = c.post("/api/import", files={"file": ("kyro-memories.json", dump, "application/json")}, data={"kind": "auto"}).json()
+        assert r["memories_created"] >= 2
+        again = c.get("/api/memories", params={"q": "IntelliJ"}).json()["items"][0]
+        assert again["kind"] == "preference" and again["source"] == "manual"
         bad = c.post("/api/import", files={"file": ("x.json", b"{not json", "application/json")}, data={"kind": "auto"})
         assert bad.status_code == 400
         s = c.get("/api/settings").json()

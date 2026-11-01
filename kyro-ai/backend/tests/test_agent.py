@@ -26,9 +26,12 @@ class ScriptedProvider:
 
 
 def engine(settings, provider):
-    router = ModelRouter(settings)
-    type(router).ollama = property(lambda self: provider)  # inject test double
-    return AgentEngine(Database(settings.db_path), router, settings)
+    class ScriptedRouter(ModelRouter):  # inject the test double without touching the real class
+        @property
+        def ollama(self):
+            return provider
+
+    return AgentEngine(Database(settings.db_path), ScriptedRouter(settings), settings)
 
 
 async def wait(run, status=("done", "failed", "cancelled")):

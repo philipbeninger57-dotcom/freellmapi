@@ -245,6 +245,10 @@ class Importer:
                     await self._import_note(z.read(i).decode("utf-8", errors="replace"), i.filename, stats, project_id)
 
     async def _import_json(self, name: str, obj: Any, stats: dict, project_id, use_llm, progress, hint: str) -> None:
+        if isinstance(obj, dict) and obj.get("version") == 1 and isinstance(obj.get("memories"), list) and "exported_at" in obj:
+            r = await self.memory.import_kyro_export(obj)  # KYRO's own export: keeps kind, source, timestamps
+            stats["memories_created"] += r["created"]; stats["duplicates"] += r["duplicate"]; stats["conflicts"] += r["conflict"]
+            return
         kind = detect_json_kind(name, obj) if hint in ("auto", "chatgpt", "claude") else hint
         if kind == "chatgpt_conversations":
             await self._import_conversations(parse_chatgpt_conversations(obj), "chatgpt", stats, project_id, use_llm, progress)
@@ -255,9 +259,6 @@ class Importer:
         elif kind in ("memories", "chatgpt_memory", "claude_memory"):
             src = "chatgpt-memory" if kind == "chatgpt_memory" else "claude-memory"
             await self._import_memories(parse_memory_list(obj), src, name, stats, project_id)
-        elif isinstance(obj, dict) and obj.get("version") == 1 and "memories" in obj:
-            r = await self.memory.import_kyro_export(obj)
-            stats["memories_created"] += r["created"]; stats["duplicates"] += r["duplicate"]; stats["conflicts"] += r["conflict"]
         else:
             stats["skipped"].append(f"{name}: unrecognised JSON structure")
 

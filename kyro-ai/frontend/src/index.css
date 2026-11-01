@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: 250 249 245;
+  --panel: 255 255 255;
+  --panel2: 240 238 230;
+  --border: 222 219 208;
+  --fg: 41 38 33;
+  --muted: 115 110 100;
+  --accent: 201 100 66;
+  color-scheme: light;
+}
+.dark {
+  --bg: 31 30 29;
+  --panel: 38 38 36;
+  --panel2: 48 48 46;
+  --border: 64 63 60;
+  --fg: 236 234 228;
+  --muted: 156 152 143;
+  --accent: 217 119 87;
+  color-scheme: dark;
+}
+
+html, body, #root { height: 100%; }
+body { @apply bg-bg text-fg font-sans antialiased; }
+
+* { scrollbar-width: thin; scrollbar-color: rgb(var(--border)) transparent; }
+
+@layer components {
+  .btn { @apply inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed; }
+  .btn-primary { @apply btn bg-accent text-white hover:brightness-110; }
+  .btn-ghost { @apply btn text-fg/80 hover:bg-panel2; }
+  .btn-outline { @apply btn border border-border hover:bg-panel2; }
+  .btn-danger { @apply btn text-red-600 dark:text-red-400 hover:bg-red-500/10; }
+  .input { @apply w-full rounded-lg border border-border bg-panel px-3 py-2 text-sm outline-none focus:border-accent/70 focus:ring-2 focus:ring-accent/20; }
+  .card { @apply rounded-xl border border-border bg-panel; }
+  .label { @apply text-xs font-medium uppercase tracking-wide text-muted; }
+  .chip { @apply inline-flex items-center gap-1 rounded-md border border-border bg-panel2 px-2 py-0.5 text-xs; }
+}
+
+.prose-kyro { @apply prose prose-neutral dark:prose-invert max-w-none prose-pre:p-0 prose-pre:bg-transparent prose-code:before:content-none prose-code:after:content-none; }
+.prose-kyro :where(p, li) { line-height: 1.7; }
+.prose-kyro code:not(pre code) { @apply rounded bg-panel2 px-1 py-0.5 text-[0.85em] font-mono; }
+
+/* highlight.js theme (works in both modes) */
+.hljs { color: rgb(var(--fg)); }
+.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-type { color: #c2410c; }
+.dark .hljs-keyword, .dark .hljs-selector-tag, .dark .hljs-built_in, .dark .hljs-type { color: #f0a070; }
+.hljs-string, .hljs-attr, .hljs-template-tag { color: #15803d; }
+.dark .hljs-string, .dark .hljs-attr { color: #9ece6a; }
+.hljs-comment, .hljs-quote { color: rgb(var(--muted)); font-style: italic; }
+.hljs-number, .hljs-literal { color: #7c3aed; }
+.dark .hljs-number, .dark .hljs-literal { color: #bb9af7; }
+.hljs-title, .hljs-function .hljs-title, .hljs-title.class_ { color: #1d4ed8; }
+.dark .hljs-title, .dark .hljs-title.class_ { color: #7aa2f7; }
+.hljs-meta, .hljs-annotation { color: #b45309; }
+
+.cursor-blink::after { content: "▍"; animation: blink 1s steps(2) infinite; color: rgb(var(--accent)); }
+@keyframes blink { 50% { opacity: 0; } }

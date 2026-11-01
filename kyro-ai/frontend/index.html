@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23d97757'/><path d='M10 8v16M10 16l9-8M13 13l7 11' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/></svg>" />
+    <title>KYRO AI</title>
+    <script>
+      try { const t = localStorage.getItem("kyro-theme") || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"); if (t === "dark") document.documentElement.classList.add("dark"); } catch (e) { document.documentElement.classList.add("dark"); }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
