@@ -60,6 +60,9 @@ class PredictionFuzzTest {
         d.resetPrediction(true);
         long now = 50_000L;
         double lx = sim.x, ly = sim.y, lz = sim.z;
+        // Floor height under the start of the current event: a ledge drop moves sim.groundY, but
+        // the move still started on the old floor (what WorldGeometry#fromGrounded sees).
+        double fromFloorY = sim.groundY;
         int ping = 20 + rnd.nextInt(280);
         int pingTicks = Math.max(1, ping / 50);
         List<Pending> pending = new ArrayList<>();
@@ -168,7 +171,7 @@ class PredictionFuzzTest {
             trace.addLast(
                     String.format(
                             "  t=%d tick y=%.4f vy=%.4f ground=%s->%s h=%.4f floor=%.1f ceil=%.2f"
-                                + " ice=%s jump=%s",
+                                    + " ice=%s jump=%s",
                             t,
                             sim.y,
                             sim.vy,
@@ -185,7 +188,9 @@ class PredictionFuzzTest {
             if (dx * dx + dy * dy + dz * dz <= 1.0 / 256.0) continue;
             boolean toGround = sim.y - sim.groundY >= -1.0E-9 && sim.y - sim.groundY < 0.12;
             boolean strict = Math.abs(sim.y - sim.groundY) < 1.0E-9;
-            boolean fromGround = ly - sim.groundY >= -1.0E-9 && ly - sim.groundY < 0.12;
+            boolean fromGround =
+                    (ly - sim.groundY >= -1.0E-9 && ly - sim.groundY < 0.12)
+                            || (ly - fromFloorY >= -1.0E-9 && ly - fromFloorY < 0.12);
             boolean ceiling = sim.ceilingY - (sim.y + 1.8) < 0.6;
             MoveGeometry geo =
                     PredictionChecksTest.geometry(
@@ -214,7 +219,7 @@ class PredictionFuzzTest {
             trace.addLast(
                     String.format(
                             "  t=%d EVENT dy=%.4f h=%.4f toGround=%s strict=%s prevGround=%s"
-                                + " carryVy=%.4f carryH=%.4f prevStrict=%s lastStrict=%s",
+                                    + " carryVy=%.4f carryH=%.4f prevStrict=%s lastStrict=%s",
                             t,
                             dy,
                             Math.hypot(dx, dz),
@@ -241,6 +246,7 @@ class PredictionFuzzTest {
             lx = sim.x;
             ly = sim.y;
             lz = sim.z;
+            fromFloorY = sim.groundY;
         }
         return rejects == 0 ? null : "seed " + seed;
     }
