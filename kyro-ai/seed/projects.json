@@ -1,0 +1,52 @@
+{
+  "note": "Initial project context provided by the user. These are starting facts, not source code. Edit or delete them in the Memory page.",
+  "projects": [
+    {
+      "name": "KYROSMP",
+      "description": "Minecraft SMP server (Paper/Folia, Minecraft 1.21.11).",
+      "instructions": "Target Paper and Folia on Minecraft 1.21.11 with Java 21. Keep plugins Folia-safe (region/entity schedulers). Consider Bedrock players via Geyser/Floodgate.",
+      "facts": [
+        "KYROSMP is the user's Minecraft SMP server.",
+        "KYROSMP targets Paper and Folia compatibility.",
+        "KYROSMP runs Minecraft version 1.21.11.",
+        "KYROSMP involves Java plugin development.",
+        "KYROSMP supports Bedrock players through Geyser and Floodgate.",
+        "KYROSMP uses LuckPerms for permissions.",
+        "KYROSMP work includes server optimization, plugin debugging and server administration."
+      ]
+    },
+    {
+      "name": "KYRO AntiCheat",
+      "description": "Minecraft anti-cheat plugin (Java 21, Maven, Folia-safe).",
+      "instructions": "Prioritise false-positive prevention. All checks must be Folia thread-safe. Build with Maven on Java 21. Add regression tests for every check change.",
+      "facts": [
+        "KYRO AntiCheat is the user's Minecraft anti-cheat project.",
+        "KYRO AntiCheat has movement checks and combat checks.",
+        "KYRO AntiCheat detects Fly, Speed, Jesus, BoatFly, Reach, KillAura and Elytra cheats.",
+        "False-positive prevention is a top priority for KYRO AntiCheat.",
+        "KYRO AntiCheat must be Folia thread-safe.",
+        "KYRO AntiCheat is written for Java 21 and built with Maven.",
+        "KYRO AntiCheat development includes testing and regression analysis."
+      ]
+    },
+    {
+      "name": "KYRO Client",
+      "description": "Minecraft client-side development (Java, Gradle).",
+      "instructions": "Java with Gradle builds. Focus on GUI, HUD modules and performance tools.",
+      "facts": [
+        "KYRO Client is the user's Minecraft client-side project.",
+        "KYRO Client is written in Java and built with Gradle.",
+        "KYRO Client includes GUI development, HUD modules and performance tools."
+      ]
+    },
+    {
+      "name": "KYRO AI",
+      "description": "The user's independent AI platform (this application).",
+      "instructions": "Local-first: Ollama inference, persistent memory in SQLite, React/TypeScript/Tailwind UI, FastAPI backend.",
+      "facts": [
+        "KYRO AI is the user's independent AI platform.",
+        "KYRO AI features advanced coding tools, persistent memory, local AI inference and a modern user interface."
+      ]
+    }
+  ]
+}
